@@ -1,7 +1,7 @@
 [package]
 name = "object-pool"
-version = "0.1.1"
-authors = ["connor <cjpet10@gmail.com>"]
+version = "0.1.2"
+authors = ["CJP10"]
 edition = "2018"
 description = "A thread-safe object pool with automatic return and attach/detach semantics"
 readme = "README.md"
