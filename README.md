@@ -5,11 +5,6 @@ https://github.com/CJP10/object-pool)
 https://crates.io/crates/object-pool)
 [![Documentation](https://docs.rs/object-pool/badge.svg)](
 https://docs.rs/object-pool)
-[![Rust 1.34+](https://img.shields.io/badge/rust-1.34+-lightgray.svg)](
-https://www.rust-lang.org)
-
-## This is nighly only as of 1.32 stable
-
 A thread-safe object pool with automatic return and attach/detach semantics.
 
 The goal of an object pool is to reuse expensive to allocate objects or frequently allocated objects
