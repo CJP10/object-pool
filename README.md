@@ -30,3 +30,12 @@ reusable_buff.clear();
 some_file.read_to_end(reusable_buff.deref_mut());
 //reusable_buff falls out of scope and is returned to the pool
 ```
+For access across multiple threads simply wrap the pool in an [`Arc`]
+```rust
+let pool: Arc<Pool<T>> = Pool::new(cap, || T::new();
+```
+
+Check out the [docs] for more info
+
+[docs]: https://docs.rs/object-pool
+[`Arc`]: https://doc.rust-lang.org/stable/std/sync/struct.Arc.html

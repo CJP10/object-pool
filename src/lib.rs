@@ -44,6 +44,15 @@
 //! reusable_buff.attach(s.into_bytes()); //need to reattach the buffer before reusable goes out of scope
 //! //reusable_buff is automatically returned to the pool when it goes out of scope
 //! ```
+//!
+//! ## Using Across Threads
+//!
+//! You simply wrap the pool in a [`std::sync::Arc`]
+//! ```
+//! let pool: Arc<Pool<T>> = Pool::new(cap, || T::new();
+//! ```
+//!
+//! [`std::sync::Arc`]: https://doc.rust-lang.org/stable/std/sync/struct.Arc.html
 
 #![feature(alloc)]
 #![feature(raw_vec_internals)]
