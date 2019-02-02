@@ -34,7 +34,7 @@ some_file.read_to_end(reusable_buff.deref_mut());
 ```
 For access across multiple threads simply wrap the pool in an [`Arc`]
 ```rust
-let pool: Arc<Pool<T>> = Pool::new(cap, || T::new();
+let pool: Arc<Pool<T>> = Pool::new(cap, || T::new());
 ```
 
 Check out the [docs] for more info
