@@ -42,9 +42,12 @@ Check out the [docs] for more info
 ## Performance
 Here are some performance results from the [benches]
 ```
-test tests::bench_alloc       ... bench:       2,797 ns/iter (+/- 1,026)
-test tests::bench_pull        ... bench:          13 ns/iter (+/- 0)
-test tests::bench_pull_detach ... bench:          17 ns/iter (+/- 0)
+test tests::bench_alloc_128k       ... bench:          18 ns/iter (+/- 0)
+test tests::bench_alloc_1g         ... bench:       4,819 ns/iter (+/- 1,665)
+test tests::bench_pull_128k        ... bench:          13 ns/iter (+/- 0)
+test tests::bench_pull_1g          ... bench:          13 ns/iter (+/- 0)
+test tests::bench_pull_detach_128k ... bench:          14 ns/iter (+/- 0)
+test tests::bench_pull_detach_1g   ... bench:          14 ns/iter (+/- 0)
 ```
 Not these are not scientific in the slightest, free feel to open an issue about how I can improve these 
 

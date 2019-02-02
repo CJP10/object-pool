@@ -209,7 +209,7 @@ mod tests {
         for t in 0..10 {
             let tmp = pool.clone();
             std::thread::spawn(move || {
-                for i in 0..1000000 {
+                for i in 0..1_000_000 {
                     let mut reusable = tmp.pull().unwrap();
                     if i % 2 == 0 {
                         let mut vec = reusable.detach();
@@ -225,12 +225,12 @@ mod tests {
         //wait for everything to finish
         std::thread::sleep_ms(3000);
 
-        assert_eq!(pool.count(), 10000000)
+        assert_eq!(pool.count(), 10_000_000)
     }
 
     #[bench]
-    fn bench_pull(b: &mut Bencher) {
-        let pool: Arc<Pool<Vec<u8>>> = Arc::new(Pool::new(10, || Vec::with_capacity(100000000)));
+    fn bench_pull_128k(b: &mut Bencher) {
+        let pool: Arc<Pool<Vec<u8>>> = Arc::new(Pool::new(1, || Vec::with_capacity(128_000)));
 
         b.iter(|| {
             pool.pull().unwrap()
@@ -238,22 +238,47 @@ mod tests {
     }
 
     #[bench]
-    fn bench_pull_detach(b: &mut Bencher) {
-        let pool: Arc<Pool<Vec<u8>>> = Arc::new(Pool::new(10, || Vec::with_capacity(100000000)));
+    fn bench_pull_1g(b: &mut Bencher) {
+        let pool: Arc<Pool<Vec<u8>>> = Arc::new(Pool::new(1, || Vec::with_capacity(1_000_000_000)));
+
+        b.iter(|| {
+            pool.pull().unwrap()
+        });
+    }
+
+    #[bench]
+    fn bench_pull_detach_128k(b: &mut Bencher) {
+        let pool: Arc<Pool<Vec<u8>>> = Arc::new(Pool::new(1, || Vec::with_capacity(128_000)));
 
         b.iter(|| {
             let mut reusable = pool.pull().unwrap();
             let item = reusable.detach();
             reusable.attach(item);
-            reusable
         });
     }
 
     #[bench]
-    fn bench_alloc(b: &mut Bencher) {
+    fn bench_pull_detach_1g(b: &mut Bencher) {
+        let pool: Arc<Pool<Vec<u8>>> = Arc::new(Pool::new(1, || Vec::with_capacity(1_000_000_000)));
 
         b.iter(|| {
-            Vec::<u8>::with_capacity(100000000)
+            let mut reusable = pool.pull().unwrap();
+            let item = reusable.detach();
+            reusable.attach(item);
+        });
+    }
+
+    #[bench]
+    fn bench_alloc_128k(b: &mut Bencher) {
+        b.iter(|| {
+            Vec::<u8>::with_capacity(128_000)
+        });
+    }
+
+    #[bench]
+    fn bench_alloc_1g(b: &mut Bencher) {
+        b.iter(|| {
+            Vec::<u8>::with_capacity(1_000_000_000)
         });
     }
 }
