@@ -1,0 +1,18 @@
+[package]
+name = "object-pool"
+version = "0.1.0"
+authors = ["connor <cjpet10@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+
+[profile.release]
+debug = true
+lto = true
+opt-level = 3
+incremental = false
+
+[profile.bench]
+lto = true
+opt-level = 3
+incremental = false
