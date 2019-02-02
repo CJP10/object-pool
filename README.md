@@ -5,6 +5,7 @@ https://github.com/CJP10/object-pool)
 https://crates.io/crates/object-pool)
 [![Documentation](https://docs.rs/object-pool/badge.svg)](
 https://docs.rs/object-pool)
+
 A thread-safe object pool with automatic return and attach/detach semantics.
 
 The goal of an object pool is to reuse expensive to allocate objects or frequently allocated objects
