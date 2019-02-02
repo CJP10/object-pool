@@ -8,12 +8,14 @@ https://docs.rs/object-pool)
 [![Rust 1.34+](https://img.shields.io/badge/rust-1.34+-lightgray.svg)](
 https://www.rust-lang.org)
 
-A thread-safe object pool with automatic return and attach/detach semantics
+## This is nighly only as of 1.32 stable
+
+A thread-safe object pool with automatic return and attach/detach semantics.
 
 The goal of an object pool is to reuse expensive to allocate objects or frequently allocated objects
-Common use case is when using buffer to read IO
+Common use case is when using buffer to read IO.
 
-You would create a pool of size n, containing `Vec<u8>` that can be used to call something like `file.read_to_end(buff)`
+You would create a pool of size n, containing `Vec<u8>` that can be used to call something like `file.read_to_end(buff)`.
 ## Usage
 ```toml
 [dependencies]
