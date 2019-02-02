@@ -39,5 +39,15 @@ let pool: Arc<Pool<T>> = Pool::new(cap, || T::new());
 
 Check out the [docs] for more info
 
+## Performance
+Here are some performance results from the [benches]
+```
+test tests::bench_alloc       ... bench:       2,797 ns/iter (+/- 1,026)
+test tests::bench_pull        ... bench:          13 ns/iter (+/- 0)
+test tests::bench_pull_detach ... bench:          17 ns/iter (+/- 0)
+```
+Not these are not scientific in the slightest, free feel to open an issue about how I can improve these 
+
 [docs]: https://docs.rs/object-pool
+[benches]: https://github.com/CJP10/object-pool/blob/master/src/lib.rs#L232
 [`Arc`]: https://doc.rust-lang.org/stable/std/sync/struct.Arc.html

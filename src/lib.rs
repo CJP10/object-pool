@@ -248,4 +248,12 @@ mod tests {
             reusable
         });
     }
+
+    #[bench]
+    fn bench_alloc(b: &mut Bencher) {
+
+        b.iter(|| {
+            Vec::<u8>::with_capacity(100000000)
+        });
+    }
 }
