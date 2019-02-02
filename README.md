@@ -13,7 +13,7 @@ A thread-safe object pool with automatic return and attach/detach semantics
 The goal of an object pool is to reuse expensive to allocate objects or frequently allocated objects
 Common use case is when using buffer to read IO
 
-You would create a Pool of size n, containing Vec<u8> that can be used to call something like `file.read_to_end(buff)`
+You would create a pool of size n, containing Vec<u8> that can be used to call something like `file.read_to_end(buff)`
 ## Usage
 ```toml
 [dependencies]
