@@ -26,7 +26,7 @@ extern crate object_pool;
 ```
 Basic usage for pulling from the pool
 ```rust
-let pool: Pool<Vec<u8>> = Pool::new(32, || Vec::with_capacity(4096);
+let pool: Pool<Vec<u8>> = Pool::new(32, || Vec::with_capacity(4096));
 let mut reusable_buff = pool.pull().unwrap();
 reusable_buff.clear();
 some_file.read_to_end(reusable_buff.deref_mut());
