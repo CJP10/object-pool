@@ -19,7 +19,7 @@
 //! ```
 //!  let pool: Pool<T> = Pool::new(capacity, || T::new());
 //! ```
-//! Creating a pool with 32 `Vec<u8>` with capacity of 4096
+//! Example pool with 32 `Vec<u8>` with capacity of 4096
 //! ```
 //!  let pool: Pool<Vec<u8>> = Pool::new(32, || Vec::with_capacity(4096));
 //! ```
@@ -31,7 +31,7 @@
 //! let pool: Pool<Vec<u8>> = Pool::new(32, || Vec::with_capacity(4096));
 //! let mut reusable_buff = pool.pull().unwrap(); // returns None when the pool is saturated
 //! reusable_buff.clear(); //clear the buff before using
-//! some_file.read_to_end(reusable_buff.deref_mut());
+//! some_file.read_to_end(reusable_buff);
 //! //reusable_buff is automatically returned to the pool when it goes out of scope
 //! ```
 //! Pull from poll and `detach()`
@@ -39,9 +39,9 @@
 //! let pool: Pool<Vec<u8>> = Pool::new(32, || Vec::with_capacity(4096));
 //! let mut reusable_buff = pool.pull().unwrap(); // returns None when the pool is saturated
 //! reusable_buff.clear(); //clear the buff before using
-//! let s = String::from(reusable_buff.detach());
+//! let s = String::from(reusable_buff.detach(Vec::new()));
 //! s.push_str("hello, world!");
-//! reusable_buff.attach(s.into_bytes()); //need to reattach the buffer before reusable goes out of scope
+//! reusable_buff.attach(s.into_bytes()); //reattach the buffer before reusable goes out of scope
 //! //reusable_buff is automatically returned to the pool when it goes out of scope
 //! ```
 //!
@@ -49,19 +49,18 @@
 //!
 //! You simply wrap the pool in a [`std::sync::Arc`]
 //! ```
-//! let pool: Arc<Pool<T>> = Pool::new(cap, || T::new());
+//! let pool: Arc<Pool<T>> = Arc::new(Pool::new(cap, || T::new()));
 //! ```
 //!
 //! [`std::sync::Arc`]: https://doc.rust-lang.org/stable/std/sync/struct.Arc.html
 
+use std::mem;
 use std::ops::{
-    Deref, DerefMut, Drop,
+    Deref, DerefMut,
 };
 use std::sync::{
     Mutex, MutexGuard,
 };
-
-use replace_with::replace_with_or_abort;
 
 pub struct Pool<T> {
     inner: Vec<Mutex<T>>
@@ -90,7 +89,7 @@ impl<T> Pool<T> {
 
             return Some(Reusable {
                 data: entry_guard,
-            })
+            });
         }
 
         None
@@ -103,7 +102,7 @@ impl Pool<Vec<u8>> {
         let mut count = 0 as u64;
 
         for entry in &self.inner {
-            let mut entry_guard = match entry.try_lock() {
+            let entry_guard = match entry.try_lock() {
                 Ok(v) => v,
                 Err(_) => { continue; }
             };
@@ -121,14 +120,13 @@ pub struct Reusable<'a, T> {
 }
 
 impl<'a, T> Reusable<'a, T> {
-    pub fn detach<F>(&mut self, use_once: F)
-        where F: FnOnce(T) -> T {
-        replace_with_or_abort(self.data.deref_mut(), use_once);
+    pub fn detach(&mut self, replacement: T) -> T {
+        mem::replace(&mut self.data, replacement)
     }
-}
 
-impl<'a, T> Drop for Reusable<'a, T> {
-    fn drop(&mut self) {}
+    pub fn attach(&mut self, data: T) -> T {
+        mem::replace(&mut self.data, data)
+    }
 }
 
 impl<'a, T> Deref for Reusable<'a, T> {
@@ -146,7 +144,6 @@ impl<'a, T> DerefMut for Reusable<'a, T> {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -163,10 +160,9 @@ mod tests {
                 for i in 0..1_000_000 {
                     let mut reusable = tmp.pull().unwrap();
                     if i % 2 == 0 {
-                        reusable.detach(|mut vec| {
-                            vec.push(i as u8);
-                            vec
-                        });
+                        let mut vec = reusable.detach(Vec::new());
+                        vec.push(i as u8);
+                        reusable.attach(vec);
                     } else {
                         reusable.push(i as u8);
                     }
