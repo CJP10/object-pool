@@ -21,14 +21,14 @@
 //! ```
 //! Creating a pool with 32 `Vec<u8>` with capacity of 4096
 //! ```
-//!  let pool: Pool<Vec<u8>> = Pool::new(32, || Vec::with_capacity(4096);
+//!  let pool: Pool<Vec<u8>> = Pool::new(32, || Vec::with_capacity(4096));
 //! ```
 //!
 //! ## Using a Pool
 //!
 //! Basic usage for pulling from the pool
 //! ```
-//! let pool: Pool<Vec<u8>> = Pool::new(32, || Vec::with_capacity(4096);
+//! let pool: Pool<Vec<u8>> = Pool::new(32, || Vec::with_capacity(4096));
 //! let mut reusable_buff = pool.pull().unwrap(); // returns None when the pool is saturated
 //! reusable_buff.clear(); //clear the buff before using
 //! some_file.read_to_end(reusable_buff.deref_mut());
@@ -36,7 +36,7 @@
 //! ```
 //! Pull from poll and `detach()`
 //! ```
-//! let pool: Pool<Vec<u8>> = Pool::new(32, || Vec::with_capacity(4096);
+//! let pool: Pool<Vec<u8>> = Pool::new(32, || Vec::with_capacity(4096));
 //! let mut reusable_buff = pool.pull().unwrap(); // returns None when the pool is saturated
 //! reusable_buff.clear(); //clear the buff before using
 //! let s = String::from(reusable_buff.detach());
@@ -49,7 +49,7 @@
 //!
 //! You simply wrap the pool in a [`std::sync::Arc`]
 //! ```
-//! let pool: Arc<Pool<T>> = Pool::new(cap, || T::new();
+//! let pool: Arc<Pool<T>> = Pool::new(cap, || T::new());
 //! ```
 //!
 //! [`std::sync::Arc`]: https://doc.rust-lang.org/stable/std/sync/struct.Arc.html
