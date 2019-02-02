@@ -54,39 +54,26 @@
 //!
 //! [`std::sync::Arc`]: https://doc.rust-lang.org/stable/std/sync/struct.Arc.html
 
-#![feature(alloc)]
-#![feature(raw_vec_internals)]
-#![feature(test)]
-
-extern crate alloc;
-extern crate test;
-
-use alloc::raw_vec::RawVec;
 use std::ops::{
     Deref, DerefMut, Drop,
 };
-use std::ptr;
-use std::sync::atomic::{
-    AtomicBool, Ordering,
+use std::sync::{
+    Mutex, MutexGuard,
 };
 
+use replace_with::replace_with_or_abort;
+
 pub struct Pool<T> {
-    inner: RawVec<Entry<T>>
+    inner: Vec<Mutex<T>>
 }
 
 impl<T> Pool<T> {
     pub fn new<F>(cap: usize, init: F) -> Pool<T>
         where F: Fn() -> T {
-        let inner = RawVec::with_capacity_zeroed(cap);
+        let mut inner = Vec::with_capacity(cap);
 
-        for i in 0..cap {
-            unsafe {
-                let raw_ptr: *mut Entry<T> = inner.ptr();
-                raw_ptr.offset(i as isize).write(Entry {
-                    data: init(),
-                    locked: AtomicBool::new(false),
-                });
-            }
+        for _ in 0..cap {
+            inner.push(Mutex::new(init()));
         }
 
         Pool {
@@ -95,20 +82,18 @@ impl<T> Pool<T> {
     }
 
     pub fn pull(&self) -> Option<Reusable<T>> {
-        for i in 0..self.inner.cap() {
-            let raw_ptr: *mut Entry<T> = unsafe { self.inner.ptr().offset(i as isize) };
-            let entry = unsafe { raw_ptr.as_mut() }.unwrap();
+        for entry in &self.inner {
+            let entry_guard = match entry.try_lock() {
+                Ok(v) => v,
+                Err(_) => { continue; }
+            };
 
-            if !entry.locked.compare_and_swap(false, true, Ordering::AcqRel) {
-                return Some(Reusable {
-                    entry: raw_ptr,
-                    index: i,
-                    detached: false,
-                });
-            }
+            return Some(Reusable {
+                data: entry_guard,
+            })
         }
 
-        return None;
+        None
     }
 }
 
@@ -117,88 +102,54 @@ impl Pool<Vec<u8>> {
     pub fn count(&self) -> u64 {
         let mut count = 0 as u64;
 
-        for i in 0..self.inner.cap() {
-            let raw_ptr: *mut Entry<Vec<u8>> = unsafe { self.inner.ptr().offset(i as isize) };
-            let entry = unsafe { raw_ptr.as_mut() }.unwrap();
+        for entry in &self.inner {
+            let mut entry_guard = match entry.try_lock() {
+                Ok(v) => v,
+                Err(_) => { continue; }
+            };
 
-            count += entry.data.len() as u64;
+            count += entry_guard.len() as u64;
         }
 
-        return count;
+        count
     }
 }
 
-struct Entry<T> {
-    data: T,
-    locked: AtomicBool,
+
+pub struct Reusable<'a, T> {
+    data: MutexGuard<'a, T>,
 }
 
-pub struct Reusable<T> {
-    entry: *mut Entry<T>,
-    detached: bool,
-    index: usize,
-}
-
-impl<T> Reusable<T> {
-    pub fn detach(&mut self) -> T {
-        if self.detached {
-            panic!("double detach not allowed")
-        }
-
-        self.detached = true;
-        let copy_entry = unsafe { ptr::read(self.entry) };
-        return copy_entry.data;
-    }
-
-    pub fn attach(&mut self, value: T) {
-        self.detached = false;
-        unsafe {
-            ptr::write(self.entry, Entry {
-                data: value,
-                locked: AtomicBool::new(true),
-            });
-        }
+impl<'a, T> Reusable<'a, T> {
+    pub fn detach<F>(&mut self, use_once: F)
+        where F: FnOnce(T) -> T {
+        replace_with_or_abort(self.data.deref_mut(), use_once);
     }
 }
 
-impl<T> Drop for Reusable<T> {
-    fn drop(&mut self) {
-        if self.detached {
-            panic!("reusable dropped while detached")
-        }
-
-        let entry = unsafe { self.entry.as_mut() }.unwrap();
-
-        let mut timeout = 0;
-        while !entry.locked.compare_and_swap(true, false, Ordering::AcqRel) {
-            if timeout > 1_000_000_000 {
-                panic!("timed out dropping reusable {}", self.index)
-            }
-
-            timeout += 1;
-        }
-    }
+impl<'a, T> Drop for Reusable<'a, T> {
+    fn drop(&mut self) {}
 }
 
-impl<T> Deref for Reusable<T> {
+impl<'a, T> Deref for Reusable<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        return unsafe { &self.entry.as_ref().unwrap().data };
+        self.data.deref()
     }
 }
 
 
-impl<T> DerefMut for Reusable<T> {
+impl<'a, T> DerefMut for Reusable<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        return unsafe { &mut self.entry.as_mut().unwrap().data };
+        self.data.deref_mut()
     }
 }
+
 
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-    use test::Bencher;
 
     use super::*;
 
@@ -206,15 +157,16 @@ mod tests {
     fn round_trip() {
         let pool: Arc<Pool<Vec<u8>>> = Arc::new(Pool::new(10, || Vec::with_capacity(1)));
 
-        for t in 0..10 {
+        for _ in 0..10 {
             let tmp = pool.clone();
             std::thread::spawn(move || {
                 for i in 0..1_000_000 {
                     let mut reusable = tmp.pull().unwrap();
                     if i % 2 == 0 {
-                        let mut vec = reusable.detach();
-                        vec.push(i as u8);
-                        reusable.attach(vec);
+                        reusable.detach(|mut vec| {
+                            vec.push(i as u8);
+                            vec
+                        });
                     } else {
                         reusable.push(i as u8);
                     }
@@ -226,59 +178,5 @@ mod tests {
         std::thread::sleep_ms(3000);
 
         assert_eq!(pool.count(), 10_000_000)
-    }
-
-    #[bench]
-    fn bench_pull_128k(b: &mut Bencher) {
-        let pool: Arc<Pool<Vec<u8>>> = Arc::new(Pool::new(1, || Vec::with_capacity(128_000)));
-
-        b.iter(|| {
-            pool.pull().unwrap()
-        });
-    }
-
-    #[bench]
-    fn bench_pull_1g(b: &mut Bencher) {
-        let pool: Arc<Pool<Vec<u8>>> = Arc::new(Pool::new(1, || Vec::with_capacity(1_000_000_000)));
-
-        b.iter(|| {
-            pool.pull().unwrap()
-        });
-    }
-
-    #[bench]
-    fn bench_pull_detach_128k(b: &mut Bencher) {
-        let pool: Arc<Pool<Vec<u8>>> = Arc::new(Pool::new(1, || Vec::with_capacity(128_000)));
-
-        b.iter(|| {
-            let mut reusable = pool.pull().unwrap();
-            let item = reusable.detach();
-            reusable.attach(item);
-        });
-    }
-
-    #[bench]
-    fn bench_pull_detach_1g(b: &mut Bencher) {
-        let pool: Arc<Pool<Vec<u8>>> = Arc::new(Pool::new(1, || Vec::with_capacity(1_000_000_000)));
-
-        b.iter(|| {
-            let mut reusable = pool.pull().unwrap();
-            let item = reusable.detach();
-            reusable.attach(item);
-        });
-    }
-
-    #[bench]
-    fn bench_alloc_128k(b: &mut Bencher) {
-        b.iter(|| {
-            Vec::<u8>::with_capacity(128_000)
-        });
-    }
-
-    #[bench]
-    fn bench_alloc_1g(b: &mut Bencher) {
-        b.iter(|| {
-            Vec::<u8>::with_capacity(1_000_000_000)
-        });
     }
 }
