@@ -1,1 +1,1 @@
-benches/criterion linguist-vendored
+benches/criterion/* linguist-vendored
