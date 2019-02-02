@@ -3,8 +3,14 @@ name = "object-pool"
 version = "0.1.0"
 authors = ["connor <cjpet10@gmail.com>"]
 edition = "2018"
-
-[dependencies]
+description = "A thread-safe object pool with automatic return and attach/detach semantics"
+readme = "README.md"
+repository = "https://github.com/CJP10/object-pool"
+homepage = "https://github.com/CJP10/object-pool"
+documentation = "https://docs.rs/object-pool"
+keywords = ["atomic", "garbage", "non-blocking", "lock-free"]
+categories = ["concurrency", "memory-management", "data-structures"]
+license = "MIT/Apache-2.0"
 
 [profile.release]
 debug = true
