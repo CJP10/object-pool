@@ -49,7 +49,7 @@ test tests::bench_pull_1g          ... bench:          13 ns/iter (+/- 0)
 test tests::bench_pull_detach_128k ... bench:          14 ns/iter (+/- 0)
 test tests::bench_pull_detach_1g   ... bench:          14 ns/iter (+/- 0)
 ```
-Not these are not scientific in the slightest, free feel to open an issue about how I can improve these 
+these are not scientific in the slightest, free feel to open an issue about how I can improve these 
 
 [docs]: https://docs.rs/object-pool
 [benches]: https://github.com/CJP10/object-pool/blob/master/src/lib.rs#L232
