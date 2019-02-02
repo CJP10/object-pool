@@ -42,8 +42,9 @@ Check out the [docs] for more examples
 ## Performance
 The benchmarks compare an `alloc()` vs a `pool.pull()` vs a `pool.detach()`.
 
-Check out the [results](benches/criterion/report/index.html).
+Check out the [results]
 
 [docs]: https://docs.rs/object-pool
 [benches]: https://github.com/CJP10/object-pool/blob/master/src/lib.rs#L232
 [`Arc`]: https://doc.rust-lang.org/stable/std/sync/struct.Arc.html
+[results]: https://cjp10.github.io/object-pool/benches/criterion/report/index.html
