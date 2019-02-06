@@ -15,7 +15,7 @@ You would create a pool of size n, containing `Vec<u8>` that can be used to call
 ## Usage
 ```toml
 [dependencies]
-object-pool = "0.2"
+object-pool = "0.3"
 ```
 ```rust
 extern crate object_pool;
