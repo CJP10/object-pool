@@ -1,6 +1,6 @@
 [package]
 name = "object-pool"
-version = "0.2.3"
+version = "0.3.0"
 authors = ["CJP10"]
 edition = "2018"
 description = "A thread-safe object pool with automatic return and attach/detach semantics"
@@ -11,6 +11,9 @@ documentation = "https://docs.rs/object-pool"
 keywords = ["atomic", "garbage", "non-blocking", "lock-free"]
 categories = ["concurrency", "memory-management", "data-structures"]
 license = "MIT/Apache-2.0"
+
+[dependencies]
+parking_lot = "0.7"
 
 [dev-dependencies]
 criterion = "0.2"

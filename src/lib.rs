@@ -58,12 +58,12 @@ use std::mem;
 use std::ops::{
     Deref, DerefMut,
 };
-use std::sync::{
-    Mutex, MutexGuard,
+use parking_lot::{
+    RwLock,RwLockWriteGuard,
 };
 
 pub struct Pool<T> {
-    inner: Vec<Mutex<T>>
+    inner: Vec<RwLock<T>>
 }
 
 impl<T> Pool<T> {
@@ -72,7 +72,7 @@ impl<T> Pool<T> {
         let mut inner = Vec::with_capacity(cap);
 
         for _ in 0..cap {
-            inner.push(Mutex::new(init()));
+            inner.push(RwLock::new(init()));
         }
 
         Pool {
@@ -82,9 +82,9 @@ impl<T> Pool<T> {
 
     pub fn pull(&self) -> Option<Reusable<T>> {
         for entry in &self.inner {
-            let entry_guard = match entry.try_lock() {
-                Ok(v) => v,
-                Err(_) => { continue; }
+            let entry_guard = match entry.try_write() {
+                Some(v) => v,
+                _ => { continue; }
             };
 
             return Some(Reusable {
@@ -102,12 +102,7 @@ impl Pool<Vec<u8>> {
         let mut count = 0 as u64;
 
         for entry in &self.inner {
-            let entry_guard = match entry.try_lock() {
-                Ok(v) => v,
-                Err(_) => { continue; }
-            };
-
-            count += entry_guard.len() as u64;
+            count += entry.write().len() as u64;
         }
 
         count
@@ -116,8 +111,10 @@ impl Pool<Vec<u8>> {
 
 
 pub struct Reusable<'a, T> {
-    data: MutexGuard<'a, T>,
+    data: RwLockWriteGuard<'a, T>,
 }
+
+unsafe impl<'a, T> Send for Reusable<'a, T> {}
 
 impl<'a, T> Reusable<'a, T> {
     pub fn detach(&mut self, replacement: T) -> T {
