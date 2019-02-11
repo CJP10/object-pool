@@ -36,7 +36,7 @@ let pool: Arc<Pool<T>> = Pool::new(cap, || T::new());
 Check out the [docs] for more examples
 
 ## Performance
-The benchmarks compare an `alloc()` vs a `pool.pull()` vs a `pool.detach()`.
+The benchmarks compare `alloc()` vs `pool.pull()` vs `pool.detach()` vs `lifeguard` vs `WIP SyncPool`.
 
 Check out the [results]
 
