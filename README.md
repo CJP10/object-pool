@@ -40,9 +40,9 @@ The benchmarks compare `alloc()` vs `pool.pull()` vs `pool.detach()` vs `lifegua
 
 Check out the [results]
 
-For those who don't like graphs, here's the raw output
+For those who don't like graphs, here's the [raw output]
 
-
+[raw output]: https://github.com/CJP10/object-pool/blob/master/BENCHMARK.md
 [docs]: https://docs.rs/object-pool
 [benches]: https://github.com/CJP10/object-pool/blob/master/src/lib.rs#L232
 [`Arc`]: https://doc.rust-lang.org/stable/std/sync/struct.Arc.html
