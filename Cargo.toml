@@ -1,6 +1,6 @@
 [package]
 name = "object-pool"
-version = "0.3.1"
+version = "0.4.0"
 authors = ["CJP10"]
 edition = "2018"
 description = "A thread-safe object pool with automatic return and attach/detach semantics"
@@ -13,11 +13,13 @@ categories = ["concurrency", "memory-management", "data-structures"]
 license = "MIT/Apache-2.0"
 
 [dependencies]
-parking_lot = "0.7"
+parking_lot = "0.9"
+crossbeam = "0.7"
 
 [dev-dependencies]
-criterion = "0.2"
-criterion-plot = "0.3"
+criterion = "0.3"
+criterion-plot = "0.4"
+lazy_static = "1"
 
 [[bench]]
 name = "bench"
@@ -25,11 +27,3 @@ harness = false
 
 [profile.release]
 debug = true
-lto = true
-opt-level = 3
-incremental = false
-
-[profile.bench]
-lto = true
-opt-level = 3
-incremental = false

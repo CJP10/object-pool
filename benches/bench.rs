@@ -20,7 +20,7 @@ fn basics(c: &mut Criterion) {
         let pool: Pool<Vec<u8>> = Pool::new(1, || Vec::with_capacity(size));
 
         b.iter(|| {
-            black_box(pool.pull().unwrap())
+            black_box(pool.pull())
         })
     }, SIZES);
 
@@ -28,7 +28,7 @@ fn basics(c: &mut Criterion) {
         let pool: Pool<Vec<u8>> = Pool::new(1, || Vec::with_capacity(size));
 
         b.iter(|| {
-            let mut item = pool.pull().unwrap();
+            let mut item = pool.pull();
             let vec = item.detach(Vec::new());
             item.attach(vec)
         })

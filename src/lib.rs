@@ -39,7 +39,7 @@
 //! let pool: Pool<Vec<u8>> = Pool::new(32, || Vec::with_capacity(4096));
 //! let mut reusable_buff = pool.pull().unwrap(); // returns None when the pool is saturated
 //! reusable_buff.clear(); //clear the buff before using
-//! let s = String::from(reusable_buff.detach(Vec::new()));
+//! let mut s = String::from(reusable_buff.detach(Vec::new()));
 //! s.push_str("hello, world!");
 //! reusable_buff.attach(s.into_bytes()); //reattach the buffer before reusable goes out of scope
 //! //reusable_buff is automatically returned to the pool when it goes out of scope
@@ -58,31 +58,36 @@ use std::mem;
 use std::ops::{
     Deref, DerefMut,
 };
-use parking_lot::{
-    RwLock,RwLockWriteGuard,
-};
+use std::marker::PhantomData;
 
-pub struct Pool<T> {
-    inner: Vec<RwLock<T>>
+use parking_lot::{
+    Mutex, MutexGuard
+};
+use crossbeam::utils::Backoff;
+
+pub struct Pool<'a,T> {
+    inner: Vec<Mutex<T>>,
+    lifetime: PhantomData<&'a T>,
 }
 
-impl<T> Pool<T> {
-    pub fn new<F>(cap: usize, init: F) -> Pool<T>
+impl<'a,T> Pool<'a,T> {
+    pub fn new<F>(cap: usize, init: F) -> Pool<'a,T>
         where F: Fn() -> T {
         let mut inner = Vec::with_capacity(cap);
 
         for _ in 0..cap {
-            inner.push(RwLock::new(init()));
+            inner.push(Mutex::new(init()));
         }
 
         Pool {
-            inner
+            inner,
+            lifetime: PhantomData
         }
     }
 
-    pub fn pull(&self) -> Option<Reusable<T>> {
+    pub fn try_pull(&self) -> Option<Reusable<T>> {
         for entry in &self.inner {
-            let entry_guard = match entry.try_write() {
+            let entry_guard = match entry.try_lock() {
                 Some(v) => v,
                 _ => { continue; }
             };
@@ -94,15 +99,27 @@ impl<T> Pool<T> {
 
         None
     }
+
+    pub fn pull(&self) ->Reusable<T> {
+        let backoff = Backoff::new();
+        loop {
+            match self.try_pull() {
+                Some(r) => return r,
+                None => {
+                    backoff.snooze();
+                }
+            };
+        }
+    }
 }
 
 //for testing only
-impl Pool<Vec<u8>> {
+impl<'a> Pool<'a, Vec<u8>> {
     pub fn count(&self) -> u64 {
         let mut count = 0 as u64;
 
         for entry in &self.inner {
-            count += entry.write().len() as u64;
+            count += entry.lock().len() as u64;
         }
 
         count
@@ -111,10 +128,8 @@ impl Pool<Vec<u8>> {
 
 
 pub struct Reusable<'a, T> {
-    data: RwLockWriteGuard<'a, T>,
+    data: MutexGuard<'a, T>,
 }
-
-unsafe impl<'a, T> Send for Reusable<'a, T> {}
 
 impl<'a, T> Reusable<'a, T> {
     pub fn detach(&mut self, replacement: T) -> T {
@@ -144,18 +159,20 @@ impl<'a, T> DerefMut for Reusable<'a, T> {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-
+    use lazy_static::lazy_static;
     use super::*;
 
     #[test]
     fn round_trip() {
-        let pool: Arc<Pool<Vec<u8>>> = Arc::new(Pool::new(10, || Vec::with_capacity(1)));
+        lazy_static! {
+            static ref POOL: Arc<Pool<'static, Vec<u8>>> = Arc::new(Pool::new(10, || Vec::with_capacity(1)));
+        }
 
         for _ in 0..10 {
-            let tmp = pool.clone();
+            let tmp = POOL.clone();
             std::thread::spawn(move || {
                 for i in 0..1_000_000 {
-                    let mut reusable = tmp.pull().unwrap();
+                    let mut reusable = tmp.pull();
                     if i % 2 == 0 {
                         let mut vec = reusable.detach(Vec::new());
                         vec.push(i as u8);
@@ -170,6 +187,6 @@ mod tests {
         //wait for everything to finish
         std::thread::sleep_ms(3000);
 
-        assert_eq!(pool.count(), 10_000_000)
+        assert_eq!(POOL.count(), 10_000_000)
     }
 }
