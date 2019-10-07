@@ -100,7 +100,7 @@ impl<'a,T> Pool<'a,T> {
         None
     }
 
-    pub fn pull(&self) ->Reusable<T> {
+    pub fn pull(&self) -> Reusable<T> {
         let backoff = Backoff::new();
         loop {
             match self.try_pull() {
