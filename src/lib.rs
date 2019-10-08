@@ -63,6 +63,7 @@ use std::marker::PhantomData;
 use parking_lot::{
     Mutex, MutexGuard
 };
+use serde::{Serialize, Serializer};
 use crossbeam::utils::Backoff;
 
 pub struct Pool<'a,T> {
@@ -153,6 +154,15 @@ impl<'a, T> Deref for Reusable<'a, T> {
 impl<'a, T> DerefMut for Reusable<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.data.deref_mut()
+    }
+}
+
+impl<'a, T> Serialize for Reusable<'a, T>
+    where T: Serialize
+{
+    fn serialize<S>(&self, serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error> where
+        S: Serializer {
+        self.data.serialize(serializer)
     }
 }
 
