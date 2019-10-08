@@ -166,6 +166,8 @@ impl<'a, T> Serialize for Reusable<'a, T>
     }
 }
 
+unsafe impl<T> Send for Reusable<'static, T> {}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
