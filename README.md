@@ -9,9 +9,8 @@ https://docs.rs/object-pool)
 A thread-safe object pool with automatic return and attach/detach semantics.
 
 The goal of an object pool is to reuse expensive to allocate objects or frequently allocated objects
-Common use case is when using buffer to read IO.
+Common use case is when using a buffer to read IO.
 
-You would create a pool of size n, containing `Vec<u8>` that can be used to call something like `file.read_to_end(buff)`.
 ## Usage
 ```toml
 [dependencies]
@@ -20,7 +19,7 @@ object-pool = "0.4"
 ```rust
 extern crate object_pool;
 ```
-Basic usage
+### Basic usage
 ```rust
 let pool: Pool<'_, Vec<u8>> = Pool::new(32, || Vec::with_capacity(4096));
 let mut reusable_buff = pool.pull().unwrap();
