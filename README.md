@@ -15,22 +15,29 @@ You would create a pool of size n, containing `Vec<u8>` that can be used to call
 ## Usage
 ```toml
 [dependencies]
-object-pool = "0.3"
+object-pool = "0.4"
 ```
 ```rust
 extern crate object_pool;
 ```
 Basic usage
 ```rust
-let pool: Pool<Vec<u8>> = Pool::new(32, || Vec::with_capacity(4096));
+let pool: Pool<'_, Vec<u8>> = Pool::new(32, || Vec::with_capacity(4096));
 let mut reusable_buff = pool.pull().unwrap();
 reusable_buff.clear();
 some_file.read_to_end(reusable_buff);
-//reusable_buff falls out of scope and is returned to the pool
+// reusable_buff falls out of scope and is returned to the pool
 ```
 For access across multiple threads simply wrap the pool in an [`Arc`]
 ```rust
-let pool: Arc<Pool<T>> = Pool::new(cap, || T::new());
+let pool: Arc<Pool<'a, Vec<u8>>> = Pool::new(32, || Vec::with_capacity(4096));
+```
+
+Sending pooled resources across threads is possible, but requires the pool's lifetime be static
+```rust
+lazy_static! {
+    static ref POOL: Arc<Pool<'static, Vec<u8>>> = Arc::new(Pool::new(32, || Vec::with_capacity(4096)));
+}
 ```
 
 Check out the [docs] for more examples
