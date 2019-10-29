@@ -18,7 +18,7 @@ crossbeam = "0.7"
 serde = "1"
 
 [dev-dependencies]
-criterion = "0.4"
+criterion = "0.3"
 criterion-plot = "0.4"
 lazy_static = "1"
 
