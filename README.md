@@ -69,7 +69,7 @@ or any other equivalent for the object that you are using, after pulling from th
 Check out the [docs] for more examples
 
 ## Performance
-The benchmarks compare `alloc()` vs `pool.pull()` vs `pool.detach()` vs `lifeguard` vs `WIP SyncPool`.
+The benchmarks compare `alloc()` vs `pool.pull()` vs `pool.detach()`.
 
 Check out the [results]
 
