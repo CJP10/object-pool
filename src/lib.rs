@@ -2,15 +2,6 @@
 //!
 //! The goal of an object pool is to reuse expensive to allocate objects or frequently allocated objects
 //!
-//! Common use case is when using buffer to read IO.
-//! You would create a Pool of size n, containing Vec<u8> that can be used to call something like `file.read_to_end(buff)`
-//!
-//! ## Warning
-//!
-//! Objects in the pool are not automatically reset, they are returned but NOT reset
-//! You may want to call `object.reset()` or  `object.clear()`
-//! or any other equivalent for the object you are using after pulling from the pool
-//!
 //! # Examples
 //!
 //! ## Creating a Pool
@@ -30,19 +21,20 @@
 //! ```
 //! let pool: Pool<Vec<u8>> = Pool::new(32, || Vec::with_capacity(4096));
 //! let mut reusable_buff = pool.pull().unwrap(); // returns None when the pool is saturated
-//! reusable_buff.clear(); //clear the buff before using
+//! reusable_buff.clear(); // clear the buff before using
 //! some_file.read_to_end(reusable_buff);
-//! //reusable_buff is automatically returned to the pool when it goes out of scope
+//! // reusable_buff is automatically returned to the pool when it goes out of scope
 //! ```
-//! Pull from poll and `detach()`
+//! Pull from pool and `detach()`
 //! ```
 //! let pool: Pool<Vec<u8>> = Pool::new(32, || Vec::with_capacity(4096));
 //! let mut reusable_buff = pool.pull().unwrap(); // returns None when the pool is saturated
-//! reusable_buff.clear(); //clear the buff before using
-//! let mut s = String::from(reusable_buff.detach(Vec::new()));
+//! reusable_buff.clear(); // clear the buff before using
+//! let (pool, reusable_buff) = reusable_buff.detach();
+//! let mut s = String::from(reusable_buff);
 //! s.push_str("hello, world!");
-//! reusable_buff.attach(s.into_bytes()); //reattach the buffer before reusable goes out of scope
-//! //reusable_buff is automatically returned to the pool when it goes out of scope
+//! pool.attach(s.into_bytes()); // reattach the buffer before reusable goes out of scope
+//! // reusable_buff is automatically returned to the pool when it goes out of scope
 //! ```
 //!
 //! ## Using Across Threads
@@ -52,153 +44,183 @@
 //! let pool: Arc<Pool<T>> = Arc::new(Pool::new(cap, || T::new()));
 //! ```
 //!
+//! # Warning
+//!
+//! Objects in the pool are not automatically reset, they are returned but NOT reset
+//! You may want to call `object.reset()` or  `object.clear()`
+//! or any other equivalent for the object that you are using, after pulling from the pool
+//!
 //! [`std::sync::Arc`]: https://doc.rust-lang.org/stable/std/sync/struct.Arc.html
 
-use std::mem;
-use std::ops::{
-    Deref, DerefMut,
-};
-use std::marker::PhantomData;
+use std::hint::unreachable_unchecked;
+use std::mem::ManuallyDrop;
+use std::ops::{Deref, DerefMut};
+use std::ptr;
+use parking_lot::Mutex;
 
-use parking_lot::{
-    Mutex, MutexGuard
-};
-use serde::{Serialize, Serializer};
-use crossbeam::utils::Backoff;
+pub type Stack<T> = Vec<T>;
 
-pub struct Pool<'a,T> {
-    inner: Vec<Mutex<T>>,
-    lifetime: PhantomData<&'a T>,
+pub struct Pool<T> {
+    objects: Mutex<Stack<T>>,
 }
 
-impl<'a,T> Pool<'a,T> {
-    pub fn new<F>(cap: usize, init: F) -> Pool<'a,T>
-        where F: Fn() -> T {
-        let mut inner = Vec::with_capacity(cap);
+impl<T> Pool<T> {
+    #[inline]
+    pub fn new<F>(cap: usize, init: F) -> Pool<T>
+    where
+        F: Fn() -> T,
+    {
+        let mut objects = Stack::new();
 
         for _ in 0..cap {
-            inner.push(Mutex::new(init()));
+            objects.push(init());
         }
 
-        Pool {
-            inner,
-            lifetime: PhantomData
-        }
+        Pool { objects: Mutex::new(objects) }
     }
 
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.objects.lock().len()
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.objects.lock().is_empty()
+    }
+
+    #[inline]
     pub fn try_pull(&self) -> Option<Reusable<T>> {
-        for entry in &self.inner {
-            let entry_guard = match entry.try_lock() {
-                Some(v) => v,
-                _ => { continue; }
-            };
-
-            return Some(Reusable {
-                data: entry_guard,
-            });
-        }
-
-        None
+        self.objects.lock().pop().map(|data| Reusable::new(self, data))
     }
 
-    pub fn pull(&self) -> Reusable<T> {
-        let backoff = Backoff::new();
-        loop {
-            match self.try_pull() {
-                Some(r) => return r,
-                None => {
-                    backoff.snooze();
-                }
-            };
+    #[inline]
+    pub fn pull<F: Fn() -> T>(&self, fallback: F) -> Reusable<T> {
+        match self.try_pull() {
+            Some(r) => r,
+            None => Reusable::new(self, fallback()),
         }
+    }
+
+    #[inline]
+    pub fn attach(&self, t: T) {
+        self.objects.lock().push(t)
     }
 }
-
-//for testing only
-impl<'a> Pool<'a, Vec<u8>> {
-    pub fn count(&self) -> u64 {
-        let mut count = 0 as u64;
-
-        for entry in &self.inner {
-            count += entry.lock().len() as u64;
-        }
-
-        count
-    }
-}
-
 
 pub struct Reusable<'a, T> {
-    data: MutexGuard<'a, T>,
+    pool: &'a Pool<T>,
+    data: Option<ManuallyDrop<T>>,
 }
 
 impl<'a, T> Reusable<'a, T> {
-    pub fn detach(&mut self, replacement: T) -> T {
-        mem::replace(&mut self.data, replacement)
+    #[inline]
+    pub fn new(pool: &'a Pool<T>, t: T) -> Self {
+        Self {
+            pool,
+            data: Some(ManuallyDrop::new(t)),
+        }
     }
 
-    pub fn attach(&mut self, data: T) -> T {
-        mem::replace(&mut self.data, data)
+    #[inline]
+    pub fn detach(mut self) -> (&'a Pool<T>, T) {
+        unsafe {
+            match self.data.take() {
+                Some(data) => (self.pool, ManuallyDrop::into_inner(data)),
+                None => unreachable_unchecked(),
+            }
+        }
     }
 }
 
 impl<'a, T> Deref for Reusable<'a, T> {
     type Target = T;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
-        self.data.deref()
+        match self.data {
+            Some(ref data) => data,
+            None => unsafe { unreachable_unchecked() },
+        }
     }
 }
-
 
 impl<'a, T> DerefMut for Reusable<'a, T> {
+    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.data.deref_mut()
+        match self.data {
+            Some(ref mut data) => data,
+            None => unsafe { unreachable_unchecked() },
+        }
     }
 }
 
-impl<'a, T> Serialize for Reusable<'a, T>
-    where T: Serialize
-{
-    fn serialize<S>(&self, serializer: S) -> Result<<S as Serializer>::Ok, <S as Serializer>::Error> where
-        S: Serializer {
-        self.data.serialize(serializer)
+impl<'a, T> Drop for Reusable<'a, T> {
+    #[inline]
+    fn drop(&mut self) {
+        if let Some(ref data) = self.data {
+            unsafe { self.pool.attach(ManuallyDrop::into_inner(ptr::read(data))) }
+        }
     }
 }
-
-unsafe impl<T> Send for Reusable<'static, T> {}
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-    use lazy_static::lazy_static;
-    use super::*;
+    use crate::{Pool, Reusable};
+    use std::mem::drop;
 
     #[test]
-    fn round_trip() {
-        lazy_static! {
-            static ref POOL: Arc<Pool<'static, Vec<u8>>> = Arc::new(Pool::new(10, || Vec::with_capacity(1)));
+    fn detach() {
+        let pool = Pool::new(1, || Vec::new());
+        let (pool, mut object) = pool.try_pull().unwrap().detach();
+        object.push(1);
+        Reusable::new(&pool, object);
+        assert_eq!(pool.try_pull().unwrap()[0], 1);
+    }
+
+    #[test]
+    fn detach_then_attach() {
+        let pool = Pool::new(1, || Vec::new());
+        let (pool, mut object) = pool.try_pull().unwrap().detach();
+        object.push(1);
+        pool.attach(object);
+        assert_eq!(pool.try_pull().unwrap()[0], 1);
+    }
+
+    #[test]
+    fn pull() {
+        let pool = Pool::<Vec<u8>>::new(1, || Vec::new());
+
+        let object1 = pool.try_pull();
+        let object2 = pool.try_pull();
+        let object3 = pool.pull(|| Vec::new());
+
+        assert!(object1.is_some());
+        assert!(object2.is_none());
+        drop(object1);
+        drop(object2);
+        drop(object3);
+        assert_eq!(pool.len(), 2);
+    }
+
+    #[test]
+    fn e2e() {
+        let pool = Pool::new(10, || Vec::new());
+        let mut objects = Vec::new();
+
+        for i in 0..10 {
+            let mut object = pool.try_pull().unwrap();
+            object.push(i);
+            objects.push(object);
         }
 
-        for _ in 0..10 {
-            let tmp = POOL.clone();
-            std::thread::spawn(move || {
-                for i in 0..1_000_000 {
-                    let mut reusable = tmp.pull();
-                    if i % 2 == 0 {
-                        let mut vec = reusable.detach(Vec::new());
-                        vec.push(i as u8);
-                        reusable.attach(vec);
-                    } else {
-                        reusable.push(i as u8);
-                    }
-                }
-            });
+        assert!(pool.try_pull().is_none());
+        drop(objects);
+        assert!(pool.try_pull().is_some());
+
+        for i in 10..0 {
+            let mut object = pool.objects.lock().pop().unwrap();
+            assert_eq!(object.pop(), Some(i));
         }
-
-        //wait for everything to finish
-        std::thread::sleep_ms(3000);
-
-        assert_eq!(POOL.count(), 10_000_000)
     }
 }

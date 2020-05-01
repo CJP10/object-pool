@@ -6,38 +6,65 @@ https://crates.io/crates/object-pool)
 [![Documentation](https://docs.rs/object-pool/badge.svg)](
 https://docs.rs/object-pool)
 
-A thread-safe object pool with automatic return and attach/detach semantics.
+A thread-safe object pool with automatic return and attach/detach semantics
 
 The goal of an object pool is to reuse expensive to allocate objects or frequently allocated objects
-Common use case is when using a buffer to read IO.
 
 ## Usage
 ```toml
 [dependencies]
-object-pool = "0.4"
+object-pool = "0.5"
 ```
 ```rust
 extern crate object_pool;
 ```
-### Basic usage
+## Examples
+
+### Creating a Pool
+
+The general pool creation looks like this
 ```rust
-let pool: Pool<'_, Vec<u8>> = Pool::new(32, || Vec::with_capacity(4096));
-let mut reusable_buff = pool.pull().unwrap();
-reusable_buff.clear();
-some_file.read_to_end(reusable_buff);
-// reusable_buff falls out of scope and is returned to the pool
+ let pool: Pool<T> = Pool::new(capacity, || T::new());
 ```
-For access across multiple threads simply wrap the pool in an [`Arc`]
+Example pool with 32 `Vec<u8>` with capacity of 4096
 ```rust
-let pool: Arc<Pool<'a, Vec<u8>>> = Pool::new(32, || Vec::with_capacity(4096));
+ let pool: Pool<Vec<u8>> = Pool::new(32, || Vec::with_capacity(4096));
 ```
 
-Sending pooled resources across threads is possible, but requires the pool's lifetime be static
+### Using a Pool
+
+Basic usage for pulling from the pool
 ```rust
-lazy_static! {
-    static ref POOL: Arc<Pool<'static, Vec<u8>>> = Arc::new(Pool::new(32, || Vec::with_capacity(4096)));
-}
+let pool: Pool<Vec<u8>> = Pool::new(32, || Vec::with_capacity(4096));
+let mut reusable_buff = pool.pull().unwrap(); // returns None when the pool is saturated
+reusable_buff.clear(); // clear the buff before using
+some_file.read_to_end(reusable_buff);
+// reusable_buff is automatically returned to the pool when it goes out of scope
 ```
+Pull from pool and `detach()`
+```rust
+let pool: Pool<Vec<u8>> = Pool::new(32, || Vec::with_capacity(4096));
+let mut reusable_buff = pool.pull().unwrap(); // returns None when the pool is saturated
+reusable_buff.clear(); // clear the buff before using
+let (pool, reusable_buff) = reusable_buff.detach();
+let mut s = String::from(reusable_buff);
+s.push_str("hello, world!");
+pool.attach(s.into_bytes()); // reattach the buffer before reusable goes out of scope
+// reusable_buff is automatically returned to the pool when it goes out of scope
+```
+
+### Using Across Threads
+
+You simply wrap the pool in a [`std::sync::Arc`]
+```rust
+let pool: Arc<Pool<T>> = Arc::new(Pool::new(cap, || T::new()));
+```
+
+## Warning
+
+Objects in the pool are not automatically reset, they are returned but NOT reset
+You may want to call `object.reset()` or  `object.clear()`
+or any other equivalent for the object that you are using, after pulling from the pool
 
 Check out the [docs] for more examples
 
