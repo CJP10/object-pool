@@ -1,6 +1,6 @@
 [package]
 name = "object-pool"
-version = "0.5.0"
+version = "0.5.1"
 authors = ["CJP10"]
 edition = "2018"
 description = "A thread-safe object pool with automatic return and attach/detach semantics"
@@ -13,7 +13,6 @@ categories = ["concurrency", "memory-management", "data-structures"]
 license = "MIT/Apache-2.0"
 
 [dependencies]
-crossbeam-epoch = "0.8"
 parking_lot = "0.10"
 
 [dev-dependencies]
