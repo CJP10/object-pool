@@ -52,11 +52,11 @@
 //!
 //! [`std::sync::Arc`]: https://doc.rust-lang.org/stable/std/sync/struct.Arc.html
 
+use parking_lot::Mutex;
 use std::hint::unreachable_unchecked;
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 use std::ptr;
-use parking_lot::Mutex;
 
 pub type Stack<T> = Vec<T>;
 
@@ -76,7 +76,9 @@ impl<T> Pool<T> {
             objects.push(init());
         }
 
-        Pool { objects: Mutex::new(objects) }
+        Pool {
+            objects: Mutex::new(objects),
+        }
     }
 
     #[inline]
@@ -91,15 +93,16 @@ impl<T> Pool<T> {
 
     #[inline]
     pub fn try_pull(&self) -> Option<Reusable<T>> {
-        self.objects.lock().pop().map(|data| Reusable::new(self, data))
+        self.objects
+            .lock()
+            .pop()
+            .map(|data| Reusable::new(self, data))
     }
 
     #[inline]
     pub fn pull<F: Fn() -> T>(&self, fallback: F) -> Reusable<T> {
-        match self.try_pull() {
-            Some(r) => r,
-            None => Reusable::new(self, fallback()),
-        }
+        self.try_pull()
+            .unwrap_or_else(|| Reusable::new(self, fallback()))
     }
 
     #[inline]
