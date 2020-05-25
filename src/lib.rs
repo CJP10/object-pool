@@ -53,10 +53,8 @@
 //! [`std::sync::Arc`]: https://doc.rust-lang.org/stable/std/sync/struct.Arc.html
 
 use parking_lot::Mutex;
-use std::hint::unreachable_unchecked;
-use std::mem::ManuallyDrop;
+use std::mem::{ManuallyDrop, forget};
 use std::ops::{Deref, DerefMut};
-use std::ptr;
 
 pub type Stack<T> = Vec<T>;
 
@@ -113,7 +111,7 @@ impl<T> Pool<T> {
 
 pub struct Reusable<'a, T> {
     pool: &'a Pool<T>,
-    data: Option<ManuallyDrop<T>>,
+    data: ManuallyDrop<T>,
 }
 
 impl<'a, T> Reusable<'a, T> {
@@ -121,18 +119,19 @@ impl<'a, T> Reusable<'a, T> {
     pub fn new(pool: &'a Pool<T>, t: T) -> Self {
         Self {
             pool,
-            data: Some(ManuallyDrop::new(t)),
+            data: ManuallyDrop::new(t),
         }
     }
 
     #[inline]
     pub fn detach(mut self) -> (&'a Pool<T>, T) {
-        unsafe {
-            match self.data.take() {
-                Some(data) => (self.pool, ManuallyDrop::into_inner(data)),
-                None => unreachable_unchecked(),
-            }
-        }
+        let ret = unsafe { (self.pool, self.take()) };
+        forget(self);
+        ret
+    }
+
+    unsafe fn take(&mut self) -> T {
+        ManuallyDrop::take(&mut self.data)
     }
 }
 
@@ -141,29 +140,21 @@ impl<'a, T> Deref for Reusable<'a, T> {
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        match self.data {
-            Some(ref data) => data,
-            None => unsafe { unreachable_unchecked() },
-        }
+        &self.data
     }
 }
 
 impl<'a, T> DerefMut for Reusable<'a, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
-        match self.data {
-            Some(ref mut data) => data,
-            None => unsafe { unreachable_unchecked() },
-        }
+        &mut self.data
     }
 }
 
 impl<'a, T> Drop for Reusable<'a, T> {
     #[inline]
     fn drop(&mut self) {
-        if let Some(ref data) = self.data {
-            unsafe { self.pool.attach(ManuallyDrop::into_inner(ptr::read(data))) }
-        }
+        unsafe { self.pool.attach(self.take()) }
     }
 }
 
