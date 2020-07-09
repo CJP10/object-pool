@@ -33,10 +33,11 @@ Example pool with 32 `Vec<u8>` with capacity of 4096
 
 ### Using a Pool
 
-Basic usage for pulling from the pool
+Basic usage for 
+ing from the pool
 ```rust
 let pool: Pool<Vec<u8>> = Pool::new(32, || Vec::with_capacity(4096));
-let mut reusable_buff = pool.pull().unwrap(); // returns None when the pool is saturated
+let mut reusable_buff = pool.try_pull().unwrap(); // returns None when the pool is saturated
 reusable_buff.clear(); // clear the buff before using
 some_file.read_to_end(reusable_buff);
 // reusable_buff is automatically returned to the pool when it goes out of scope
@@ -44,7 +45,7 @@ some_file.read_to_end(reusable_buff);
 Pull from pool and `detach()`
 ```rust
 let pool: Pool<Vec<u8>> = Pool::new(32, || Vec::with_capacity(4096));
-let mut reusable_buff = pool.pull().unwrap(); // returns None when the pool is saturated
+let mut reusable_buff = pool.try_pull().unwrap(); // returns None when the pool is saturated
 reusable_buff.clear(); // clear the buff before using
 let (pool, reusable_buff) = reusable_buff.detach();
 let mut s = String::from(reusable_buff);
@@ -69,7 +70,7 @@ or any other equivalent for the object that you are using, after pulling from th
 Check out the [docs] for more examples
 
 ## Performance
-The benchmarks compare `alloc()` vs `pool.pull()` vs `pool.detach()`.
+The benchmarks compare `alloc()` vs `pool.try_pull()` vs `pool.detach()`.
 
 Check out the [results]
 
