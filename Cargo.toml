@@ -13,7 +13,7 @@ categories = ["concurrency", "memory-management", "data-structures"]
 license = "MIT/Apache-2.0"
 
 [dependencies]
-parking_lot = "0.10"
+parking_lot = "0.11"
 
 [dev-dependencies]
 criterion = "0.3"
