@@ -212,7 +212,7 @@ mod tests {
         drop(objects);
         assert!(pool.try_pull().is_some());
 
-        for i in 10..0 {
+        for i in (10..0).rev() {
             let mut object = pool.objects.lock().pop().unwrap();
             assert_eq!(object.pop(), Some(i));
         }
