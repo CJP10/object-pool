@@ -8,10 +8,14 @@
 //!
 //! The general pool creation looks like this
 //! ```
+//! # use object_pool::Pool;
+//! # type T = Vec<u32>;
+//! # const capacity: usize = 5;
 //!  let pool: Pool<T> = Pool::new(capacity, || T::new());
 //! ```
 //! Example pool with 32 `Vec<u8>` with capacity of 4096
 //! ```
+//! # use object_pool::Pool;
 //!  let pool: Pool<Vec<u8>> = Pool::new(32, || Vec::with_capacity(4096));
 //! ```
 //!
@@ -19,19 +23,23 @@
 //!
 //! Basic usage for pulling from the pool
 //! ```
+//! # use object_pool::Pool;
+//! # use std::io::Read;
+//! # let mut some_file = std::fs::File::open("/dev/null").unwrap();
 //! let pool: Pool<Vec<u8>> = Pool::new(32, || Vec::with_capacity(4096));
-//! let mut reusable_buff = pool.pull().unwrap(); // returns None when the pool is saturated
+//! let mut reusable_buff = pool.try_pull().unwrap(); // returns None when the pool is saturated
 //! reusable_buff.clear(); // clear the buff before using
-//! some_file.read_to_end(reusable_buff);
+//! some_file.read_to_end(&mut reusable_buff).ok();
 //! // reusable_buff is automatically returned to the pool when it goes out of scope
 //! ```
 //! Pull from pool and `detach()`
 //! ```
+//! # use object_pool::Pool;
 //! let pool: Pool<Vec<u8>> = Pool::new(32, || Vec::with_capacity(4096));
-//! let mut reusable_buff = pool.pull().unwrap(); // returns None when the pool is saturated
+//! let mut reusable_buff = pool.try_pull().unwrap(); // returns None when the pool is saturated
 //! reusable_buff.clear(); // clear the buff before using
 //! let (pool, reusable_buff) = reusable_buff.detach();
-//! let mut s = String::from(reusable_buff);
+//! let mut s = String::from_utf8(reusable_buff).unwrap();
 //! s.push_str("hello, world!");
 //! pool.attach(s.into_bytes()); // reattach the buffer before reusable goes out of scope
 //! // reusable_buff is automatically returned to the pool when it goes out of scope
@@ -41,6 +49,10 @@
 //!
 //! You simply wrap the pool in a [`std::sync::Arc`]
 //! ```
+//! # use std::sync::Arc;
+//! # use object_pool::Pool;
+//! # type T = Vec<u32>;
+//! # const cap: usize = 5;
 //! let pool: Arc<Pool<T>> = Arc::new(Pool::new(cap, || T::new()));
 //! ```
 //!
