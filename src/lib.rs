@@ -92,6 +92,11 @@ impl<T> Pool<T> {
     }
 
     #[inline]
+    pub fn from_vec(v: Vec<T>) -> Pool<T> {
+        Pool { objects: Mutex::new(v) }
+    }
+
+    #[inline]
     pub fn len(&self) -> usize {
         self.objects.lock().len()
     }
