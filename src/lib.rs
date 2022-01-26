@@ -65,7 +65,8 @@
 //! [`std::sync::Arc`]: https://doc.rust-lang.org/stable/std/sync/struct.Arc.html
 
 use parking_lot::Mutex;
-use std::mem::{ManuallyDrop, forget};
+use std::iter::FromIterator;
+use std::mem::{forget, ManuallyDrop};
 use std::ops::{Deref, DerefMut};
 
 pub type Stack<T> = Vec<T>;
@@ -123,6 +124,14 @@ impl<T> Pool<T> {
     #[inline]
     pub fn attach(&self, t: T) {
         self.objects.lock().push(t)
+    }
+}
+
+impl<T> FromIterator<T> for Pool<T> {
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        Self {
+            objects: Mutex::new(iter.into_iter().collect()),
+        }
     }
 }
 
