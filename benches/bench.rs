@@ -26,27 +26,19 @@ static SIZES: &[usize] = &[
 ];
 
 fn basics(c: &mut Criterion) {
-    c.bench_function_over_inputs(
-        "pulling_from_pool",
-        |b, &&size| {
-            let pool: Pool<Vec<u8>> = Pool::new(1, || Vec::with_capacity(size));
-            b.iter(|| pool.try_pull())
-        },
-        SIZES,
-    );
+    c.bench_function("pulling_from_pool", |b| {
+        let pool = Pool::new(1, || ());
+        b.iter(|| pool.try_pull())
+    });
 
-    c.bench_function_over_inputs(
-        "detach_from_pool",
-        |b, &&size| {
-            let pool: Pool<Vec<u8>> = Pool::new(1, || Vec::with_capacity(size));
-            b.iter(|| {
-                let item = pool.try_pull().unwrap();
-                let (_, vec) = item.detach();
-                pool.attach(vec);
-            })
-        },
-        SIZES,
-    );
+    c.bench_function("detach_from_pool", |b| {
+        let pool = Pool::new(1, || ());
+        b.iter(|| {
+            let item = pool.try_pull().unwrap();
+            let (_, vec) = item.detach();
+            pool.attach(vec);
+        })
+    });
 
     c.bench_function_over_inputs(
         "alloc",
