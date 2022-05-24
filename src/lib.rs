@@ -81,20 +81,16 @@ impl<T> Pool<T> {
     where
         F: Fn() -> T,
     {
-        let mut objects = Stack::new();
-
-        for _ in 0..cap {
-            objects.push(init());
-        }
-
         Pool {
-            objects: Mutex::new(objects),
+            objects: Mutex::new((0..cap).into_iter().map(|_| init()).collect()),
         }
     }
 
     #[inline]
     pub fn from_vec(v: Vec<T>) -> Pool<T> {
-        Pool { objects: Mutex::new(v) }
+        Pool {
+            objects: Mutex::new(v),
+        }
     }
 
     #[inline]
