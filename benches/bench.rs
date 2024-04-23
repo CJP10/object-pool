@@ -26,10 +26,19 @@ static SIZES: &[usize] = &[
 ];
 
 fn basics(c: &mut Criterion) {
-    c.bench_function("pulling_from_pool", |b| {
+    let mut group = c.benchmark_group("pulling_from_pool");
+    group.throughput(criterion::Throughput::Elements(1));
+
+    group.bench_function("borrowed", |b| {
         let pool = Pool::new(1, || ());
         b.iter(|| pool.try_pull())
     });
+
+    group.bench_function("owned", |b| {
+        let pool = std::sync::Arc::new(Pool::new(1, || ()));
+        b.iter(|| pool.try_pull_owned())
+    });
+    drop(group);
 
     c.bench_function("detach_from_pool", |b| {
         let pool = Pool::new(1, || ());
