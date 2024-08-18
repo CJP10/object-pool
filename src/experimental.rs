@@ -3,11 +3,14 @@ use std::{
     iter::FromIterator,
     mem::ManuallyDrop,
     ops::{Deref, DerefMut},
-    sync::atomic::{
-        AtomicU64,
-        Ordering::{Acquire, Relaxed, Release},
-    },
+    sync::atomic::Ordering::{Acquire, Relaxed, Release},
 };
+
+#[cfg(not(loom))]
+use std::sync::atomic::AtomicU64;
+
+#[cfg(loom)]
+use loom::sync::atomic::AtomicU64;
 
 const U64_BITS: usize = u64::BITS as usize;
 
@@ -139,7 +142,6 @@ impl AtomicBitSet {
 #[cfg(test)]
 mod tests {
     use crate::experimental::Pool;
-    use std::iter::FromIterator;
     use std::sync::atomic::Ordering::Relaxed;
 
     #[test]
@@ -189,5 +191,40 @@ mod tests {
                 .map(|(i, x)| (i, (*x.get())))
                 .all(|(i, x)| x.is_some() && i + 1 == x.unwrap()));
         }
+    }
+}
+
+#[cfg(loom)]
+mod loom_tests {
+    use crate::experimental::Pool;
+    use loom::sync::Arc;
+
+    #[test]
+    fn concurrent_pull_sum() {
+        loom::model(|| {
+            const N: usize = 2;
+            let p: Pool<usize> = (0..N).map(|_| 0).collect();
+            let p = Arc::new(p);
+
+            let handles: Vec<_> = (0..N)
+                .map(|_| {
+                    let p1 = p.clone();
+                    loom::thread::spawn(move || {
+                        *p1.pull().unwrap() += 1;
+                    })
+                })
+                .collect();
+
+            for handle in handles {
+                handle.join().unwrap();
+            }
+
+            unsafe {
+                assert_eq!(
+                    p.objects.iter().map(|x| (*x.get()).unwrap()).sum::<usize>(),
+                    N
+                );
+            }
+        });
     }
 }
