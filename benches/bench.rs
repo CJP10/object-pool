@@ -2,7 +2,8 @@
 extern crate criterion;
 
 use criterion::Criterion;
-use object_pool::Pool;
+use object_pool::{experimental::Pool as ExperimentalPool, Pool};
+use std::iter::FromIterator;
 
 static KB: usize = 1024;
 static MB: usize = 1024 * KB;
@@ -28,6 +29,11 @@ static SIZES: &[usize] = &[
 fn basics(c: &mut Criterion) {
     let mut group = c.benchmark_group("pulling_from_pool");
     group.throughput(criterion::Throughput::Elements(1));
+
+    group.bench_function("experimental_pull", |b| {
+        let pool = ExperimentalPool::from_iter(&[()]);
+        b.iter(|| pool.pull())
+    });
 
     group.bench_function("borrowed", |b| {
         let pool = Pool::new(1, || ());

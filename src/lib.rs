@@ -25,7 +25,7 @@
 //! ```
 //! # use object_pool::Pool;
 //! # use std::io::Read;
-//! # let mut some_file = std::fs::File::open("/dev/null").unwrap();
+//! # let mut some_file = std::io::empty();
 //! let pool: Pool<Vec<u8>> = Pool::new(32, || Vec::with_capacity(4096));
 //! let mut reusable_buff = pool.try_pull().unwrap(); // returns None when the pool is saturated
 //! reusable_buff.clear(); // clear the buff before using
@@ -80,6 +80,8 @@ use std::iter::FromIterator;
 use std::mem::{forget, ManuallyDrop};
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
+
+pub mod experimental;
 
 pub type Stack<T> = Vec<T>;
 
