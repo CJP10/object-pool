@@ -5,7 +5,7 @@ use std::{
     ops::{Deref, DerefMut},
     sync::atomic::{
         AtomicU64,
-        Ordering::{Acquire, Relaxed, Release, SeqCst},
+        Ordering::{Acquire, Relaxed, Release},
     },
 };
 
@@ -138,9 +138,8 @@ impl AtomicBitSet {
 
 #[cfg(test)]
 mod tests {
-    use crate::experimental::{Pool, Reusable, U64_BITS};
+    use crate::experimental::Pool;
     use std::iter::FromIterator;
-    use std::ops::{Add, AddAssign, DerefMut};
     use std::sync::atomic::Ordering::Relaxed;
 
     #[test]
@@ -155,7 +154,7 @@ mod tests {
 
     #[test]
     fn pull_set_return() {
-        let p = Pool::from_iter((0..100usize));
+        let p = Pool::from_iter(0..100usize);
         assert_eq!(p.len(), 100);
         assert_eq!(p.capacity(), 100);
         assert_eq!(p.bitset.ints.len(), 2);
