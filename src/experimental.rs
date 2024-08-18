@@ -144,7 +144,7 @@ mod tests {
 
     #[test]
     fn empty() {
-        let p = Pool::<()>::from_iter(Vec::new());
+        let p: Pool<()> = std::iter::empty().collect();
         assert_eq!(p.len(), 0);
         assert_eq!(p.capacity(), 0);
         assert_eq!(p.bitset.ints.len(), 1);
@@ -154,7 +154,7 @@ mod tests {
 
     #[test]
     fn pull_set_return() {
-        let p = Pool::from_iter(0..100usize);
+        let p: Pool<usize> = (0..100usize).collect();
         assert_eq!(p.len(), 100);
         assert_eq!(p.capacity(), 100);
         assert_eq!(p.bitset.ints.len(), 2);

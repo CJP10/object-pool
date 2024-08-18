@@ -81,6 +81,7 @@ use std::mem::{forget, ManuallyDrop};
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
+#[cfg(feature = "experimental")]
 pub mod experimental;
 
 pub type Stack<T> = Vec<T>;
