@@ -4,6 +4,7 @@ extern crate criterion;
 use criterion::Criterion;
 use object_pool::{experimental::Pool as ExperimentalPool, Pool};
 use std::iter::FromIterator;
+use std::sync::Arc;
 
 static KB: usize = 1024;
 static MB: usize = 1024 * KB;
@@ -30,9 +31,14 @@ fn basics(c: &mut Criterion) {
     let mut group = c.benchmark_group("pulling_from_pool");
     group.throughput(criterion::Throughput::Elements(1));
 
-    group.bench_function("experimental_pull", |b| {
+    group.bench_function("experimental_borrowed", |b| {
         let pool = ExperimentalPool::from_iter(&[()]);
         b.iter(|| pool.pull())
+    });
+
+    group.bench_function("experimental_owned", |b| {
+        let pool = Arc::new(ExperimentalPool::from_iter(&[()]));
+        b.iter(|| pool.pull_owned())
     });
 
     group.bench_function("borrowed", |b| {
@@ -55,11 +61,11 @@ fn basics(c: &mut Criterion) {
         })
     });
 
-    c.bench_function_over_inputs(
-        "alloc",
-        |b, &&size| b.iter(|| Vec::<u8>::with_capacity(size)),
-        SIZES,
-    );
+    // c.bench_function_over_inputs(
+    //     "alloc",
+    //     |b, &&size| b.iter(|| Vec::<u8>::with_capacity(size)),
+    //     SIZES,
+    // );
 }
 
 criterion_group!(benches, basics);

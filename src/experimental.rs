@@ -7,10 +7,10 @@ use std::{
 };
 
 #[cfg(not(loom))]
-use std::sync::atomic::AtomicU64;
+use std::sync::{atomic::AtomicU64, Arc};
 
 #[cfg(loom)]
-use loom::sync::atomic::AtomicU64;
+use loom::sync::{atomic::AtomicU64, Arc};
 
 const U64_BITS: usize = u64::BITS as usize;
 
@@ -38,6 +38,22 @@ impl<T> Pool<T> {
         unsafe {
             self.bitset.zero_first_set_bit().map(|index| Reusable {
                 pool: &self,
+                value: ManuallyDrop::new(
+                    self.objects[index]
+                        .get()
+                        .replace(None)
+                        .expect("Object should not be null"),
+                ),
+                index,
+            })
+        }
+    }
+
+    #[cfg(not(loom))]
+    pub fn pull_owned(self: &Arc<Self>) -> Option<ReusableOwned<T>> {
+        unsafe {
+            self.bitset.zero_first_set_bit().map(|index| ReusableOwned {
+                pool: Arc::clone(self),
                 value: ManuallyDrop::new(
                     self.objects[index]
                         .get()
@@ -99,6 +115,35 @@ impl<'a, T> Drop for Reusable<'a, T> {
     }
 }
 
+pub struct ReusableOwned<T> {
+    pool: Arc<Pool<T>>,
+    value: ManuallyDrop<T>,
+    index: usize,
+}
+
+impl<T> Deref for ReusableOwned<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl<T> DerefMut for ReusableOwned<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.value
+    }
+}
+
+impl<T> Drop for ReusableOwned<T> {
+    fn drop(&mut self) {
+        unsafe {
+            self.pool
+                .ret(self.index, ManuallyDrop::take(&mut self.value))
+        }
+    }
+}
+
 struct AtomicBitSet {
     ints: Box<[AtomicU64]>,
 }
@@ -141,7 +186,7 @@ impl AtomicBitSet {
 
 #[cfg(test)]
 mod tests {
-    use crate::experimental::Pool;
+    use super::Pool;
     use std::sync::atomic::Ordering::Relaxed;
 
     #[test]
@@ -186,7 +231,7 @@ mod tests {
         unsafe {
             assert!(p
                 .objects
-                .into_iter()
+                .iter()
                 .enumerate()
                 .map(|(i, x)| (i, (*x.get())))
                 .all(|(i, x)| x.is_some() && i + 1 == x.unwrap()));
@@ -196,35 +241,36 @@ mod tests {
 
 #[cfg(loom)]
 mod loom_tests {
-    use crate::experimental::Pool;
+    use super::Pool;
     use loom::sync::Arc;
 
     #[test]
     fn concurrent_pull_sum() {
         loom::model(|| {
-            const N: usize = 2;
-            let p: Pool<usize> = (0..N).map(|_| 0).collect();
+            let p: Pool<usize> = (0..1).map(|_| 0).collect();
             let p = Arc::new(p);
+            let p1 = p.clone();
 
-            let handles: Vec<_> = (0..N)
-                .map(|_| {
-                    let p1 = p.clone();
-                    loom::thread::spawn(move || {
-                        *p1.pull().unwrap() += 1;
-                    })
-                })
-                .collect();
+            let h = loom::thread::spawn(move || {
+                if let Some(mut o) = p1.pull() {
+                    *o += 1
+                }
+            });
 
-            for handle in handles {
-                handle.join().unwrap();
-            }
-
-            unsafe {
-                assert_eq!(
-                    p.objects.iter().map(|x| (*x.get()).unwrap()).sum::<usize>(),
-                    N
-                );
-            }
+            match p.pull() {
+                Some(mut o) => {
+                    if *o == 0 {
+                        *o += 1;
+                        h.join().unwrap();
+                        drop(o);
+                        assert_eq!(*p.pull().unwrap(), 1)
+                    }
+                }
+                None => {
+                    h.join().unwrap();
+                    assert_eq!(*p.pull().unwrap(), 1)
+                }
+            };
         });
     }
 }
