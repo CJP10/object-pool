@@ -1,7 +1,7 @@
 use std::{
     cell::UnsafeCell,
     iter::FromIterator,
-    mem::ManuallyDrop,
+    mem::{ManuallyDrop, MaybeUninit},
     ops::{Deref, DerefMut},
     sync::atomic::Ordering::{Acquire, Relaxed, Release},
 };
@@ -15,7 +15,7 @@ use loom::sync::{atomic::AtomicU64, Arc};
 const U64_BITS: usize = u64::BITS as usize;
 
 pub struct Pool<T> {
-    objects: Box<[UnsafeCell<Option<T>>]>,
+    objects: Box<[UnsafeCell<MaybeUninit<T>>]>,
     bitset: AtomicBitSet,
 }
 
@@ -23,7 +23,7 @@ impl<A> FromIterator<A> for Pool<A> {
     fn from_iter<T: IntoIterator<Item = A>>(iter: T) -> Self {
         let objects = iter
             .into_iter()
-            .map(|o| UnsafeCell::new(Some(o)))
+            .map(|o| UnsafeCell::new(MaybeUninit::new(o)))
             .collect::<Vec<_>>()
             .into_boxed_slice();
         Self {
@@ -41,8 +41,8 @@ impl<T> Pool<T> {
                 value: ManuallyDrop::new(
                     self.objects[index]
                         .get()
-                        .replace(None)
-                        .expect("Object should not be null"),
+                        .replace(MaybeUninit::uninit())
+                        .assume_init(),
                 ),
                 index,
             })
@@ -57,8 +57,8 @@ impl<T> Pool<T> {
                 value: ManuallyDrop::new(
                     self.objects[index]
                         .get()
-                        .replace(None)
-                        .expect("Object should not be null"),
+                        .replace(MaybeUninit::uninit())
+                        .assume_init(),
                 ),
                 index,
             })
@@ -79,10 +79,27 @@ impl<T> Pool<T> {
 
     fn ret(&self, index: usize, value: T) {
         unsafe {
-            let old = self.objects[index].get().replace(Some(value));
-            debug_assert!(old.is_none())
+            self.objects[index].get().write(MaybeUninit::new(value));
         }
         self.bitset.set(index)
+    }
+}
+
+impl<T> Drop for Pool<T> {
+    fn drop(&mut self) {
+        for (i, int) in self.bitset.ints.iter().enumerate() {
+            let mut bits = int.load(Acquire);
+            while bits != 0 {
+                let bit = bits.trailing_zeros() as usize;
+                bits &= !(1 << bit);
+                unsafe {
+                    self.objects[i * U64_BITS + bit]
+                        .get()
+                        .read()
+                        .assume_init_drop()
+                }
+            }
+        }
     }
 }
 
@@ -233,8 +250,8 @@ mod tests {
                 .objects
                 .iter()
                 .enumerate()
-                .map(|(i, x)| (i, (*x.get())))
-                .all(|(i, x)| x.is_some() && i + 1 == x.unwrap()));
+                .map(|(i, x)| (i, (*x.get()).assume_init_read()))
+                .all(|(i, x)| i + 1 == x));
         }
     }
 }
@@ -245,30 +262,37 @@ mod loom_tests {
     use loom::sync::Arc;
 
     #[test]
-    fn concurrent_pull_sum() {
+    fn concurrent_pull_mutate() {
         loom::model(|| {
-            let p: Pool<usize> = (0..1).map(|_| 0).collect();
+            let p: Pool<Vec<_>> = (0..1).map(|_| vec![1, 2, 3]).collect();
             let p = Arc::new(p);
             let p1 = p.clone();
 
             let h = loom::thread::spawn(move || {
                 if let Some(mut o) = p1.pull() {
-                    *o += 1
+                    let x = o.remove(0);
+                    assert!(x == 1 || x == 2);
+                    if x == 1 {
+                        assert_eq!(o.as_slice(), &[2, 3]);
+                    }
+                    if x == 2 {
+                        assert_eq!(o.as_slice(), &[3]);
+                    }
                 }
             });
 
             match p.pull() {
                 Some(mut o) => {
-                    if *o == 0 {
-                        *o += 1;
+                    assert!(o.len() == 2 || o.len() == 3);
+                    if o.len() == 3 {
+                        o.remove(0);
                         h.join().unwrap();
-                        drop(o);
-                        assert_eq!(*p.pull().unwrap(), 1)
                     }
+                    assert_eq!(o.as_slice(), &[2, 3]);
                 }
                 None => {
                     h.join().unwrap();
-                    assert_eq!(*p.pull().unwrap(), 1)
+                    assert_eq!(p.pull().unwrap().as_slice(), &[2, 3]);
                 }
             };
         });

@@ -6,27 +6,6 @@ use object_pool::{experimental::Pool as ExperimentalPool, Pool};
 use std::iter::FromIterator;
 use std::sync::Arc;
 
-static KB: usize = 1024;
-static MB: usize = 1024 * KB;
-static GB: usize = 1024 * MB;
-static SIZES: &[usize] = &[
-    4 * KB,
-    16 * KB,
-    64 * KB,
-    128 * KB,
-    512 * KB,
-    1 * MB,
-    16 * MB,
-    32 * MB,
-    64 * MB,
-    128 * MB,
-    256 * MB,
-    512 * MB,
-    1 * GB,
-    2 * GB,
-    3 * GB,
-];
-
 fn basics(c: &mut Criterion) {
     let mut group = c.benchmark_group("pulling_from_pool");
     group.throughput(criterion::Throughput::Elements(1));
@@ -60,12 +39,6 @@ fn basics(c: &mut Criterion) {
             pool.attach(vec);
         })
     });
-
-    // c.bench_function_over_inputs(
-    //     "alloc",
-    //     |b, &&size| b.iter(|| Vec::<u8>::with_capacity(size)),
-    //     SIZES,
-    // );
 }
 
 criterion_group!(benches, basics);
