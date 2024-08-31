@@ -16,7 +16,7 @@ const U64_BITS: usize = u64::BITS as usize;
 
 pub struct Pool<T> {
     objects: Box<[UnsafeCell<MaybeUninit<T>>]>,
-    bitset: AtomicBitSet,
+    freelist: FreeList,
 }
 
 impl<A> FromIterator<A> for Pool<A> {
@@ -27,32 +27,27 @@ impl<A> FromIterator<A> for Pool<A> {
             .collect::<Vec<_>>()
             .into_boxed_slice();
         Self {
-            bitset: AtomicBitSet::new(objects.len()),
+            freelist: FreeList::new(objects.len()),
             objects,
         }
     }
 }
 
 impl<T> Pool<T> {
-    pub fn pull(&self) -> Option<Reusable<T>> {
+    pub fn pull(&self) -> Option<ObjectRef<T>> {
         unsafe {
-            self.bitset.zero_first_set_bit().map(|index| Reusable {
+            self.freelist.first_free().map(|index| ObjectRef {
                 pool: &self,
-                value: ManuallyDrop::new(
-                    self.objects[index]
-                        .get()
-                        .replace(MaybeUninit::uninit())
-                        .assume_init(),
-                ),
+                value: (*self.objects[index].get()).assume_init_mut(),
                 index,
             })
         }
     }
 
     #[cfg(not(loom))]
-    pub fn pull_owned(self: &Arc<Self>) -> Option<ReusableOwned<T>> {
+    pub fn pull_owned(self: &Arc<Self>) -> Option<Object<T>> {
         unsafe {
-            self.bitset.zero_first_set_bit().map(|index| ReusableOwned {
+            self.freelist.first_free().map(|index| Object {
                 pool: Arc::clone(self),
                 value: ManuallyDrop::new(
                     self.objects[index]
@@ -67,7 +62,7 @@ impl<T> Pool<T> {
 
     pub fn len(&self) -> usize {
         let mut len = 0;
-        for int in self.bitset.ints.iter() {
+        for int in self.freelist.ints.iter() {
             len += int.load(Relaxed).count_ones() as usize
         }
         len
@@ -76,69 +71,54 @@ impl<T> Pool<T> {
     pub fn capacity(&self) -> usize {
         self.objects.len()
     }
-
-    fn ret(&self, index: usize, value: T) {
-        unsafe {
-            self.objects[index].get().write(MaybeUninit::new(value));
-        }
-        self.bitset.set(index)
-    }
 }
 
 impl<T> Drop for Pool<T> {
     fn drop(&mut self) {
-        for (i, int) in self.bitset.ints.iter().enumerate() {
+        for (i, int) in self.freelist.ints.iter().enumerate() {
             let mut bits = int.load(Acquire);
             while bits != 0 {
                 let bit = bits.trailing_zeros() as usize;
+                unsafe { (*self.objects[i * U64_BITS + bit].get()).assume_init_drop() }
                 bits &= !(1 << bit);
-                unsafe {
-                    self.objects[i * U64_BITS + bit]
-                        .get()
-                        .read()
-                        .assume_init_drop()
-                }
             }
         }
     }
 }
 
-pub struct Reusable<'a, T> {
+pub struct ObjectRef<'a, T> {
     pool: &'a Pool<T>,
-    value: ManuallyDrop<T>,
+    value: &'a mut T,
     index: usize,
 }
 
-impl<'a, T> Deref for Reusable<'a, T> {
+impl<'a, T> Deref for ObjectRef<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        &self.value
+        self.value as _
     }
 }
 
-impl<'a, T> DerefMut for Reusable<'a, T> {
+impl<'a, T> DerefMut for ObjectRef<'a, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.value
+        self.value
     }
 }
 
-impl<'a, T> Drop for Reusable<'a, T> {
+impl<'a, T> Drop for ObjectRef<'a, T> {
     fn drop(&mut self) {
-        unsafe {
-            self.pool
-                .ret(self.index, ManuallyDrop::take(&mut self.value))
-        }
+        self.pool.freelist.free(self.index);
     }
 }
 
-pub struct ReusableOwned<T> {
+pub struct Object<T> {
     pool: Arc<Pool<T>>,
     value: ManuallyDrop<T>,
     index: usize,
 }
 
-impl<T> Deref for ReusableOwned<T> {
+impl<T> Deref for Object<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -146,40 +126,47 @@ impl<T> Deref for ReusableOwned<T> {
     }
 }
 
-impl<T> DerefMut for ReusableOwned<T> {
+impl<T> DerefMut for Object<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.value
     }
 }
 
-impl<T> Drop for ReusableOwned<T> {
+impl<T> Drop for Object<T> {
     fn drop(&mut self) {
         unsafe {
-            self.pool
-                .ret(self.index, ManuallyDrop::take(&mut self.value))
+            self.pool.objects[self.index]
+                .get()
+                .write(MaybeUninit::new(ManuallyDrop::take(&mut self.value)));
         }
+        self.pool.freelist.free(self.index)
     }
 }
 
-struct AtomicBitSet {
+struct FreeList {
     ints: Box<[AtomicU64]>,
 }
 
-impl AtomicBitSet {
-    fn new(num_of_bits: usize) -> Self {
-        let num_of_ints = ((num_of_bits + U64_BITS - 1) / U64_BITS).max(1);
-        let mut bits: Vec<AtomicU64> = (1..num_of_ints).map(|_| AtomicU64::new(u64::MAX)).collect();
-        bits.push(AtomicU64::new(
-            u64::MAX
-                .checked_shr((U64_BITS - num_of_bits % U64_BITS) as u32)
-                .unwrap_or(0),
-        ));
+impl FreeList {
+    fn new(entries: usize) -> Self {
+        let mut bits: Vec<AtomicU64> = (0..entries)
+            .step_by(U64_BITS)
+            .map(|_| AtomicU64::new(u64::MAX))
+            .collect();
+
+        let out_of_bounds_bits = U64_BITS - (entries % U64_BITS);
+        if bits.is_empty() {
+            bits = vec![AtomicU64::new(0)];
+        } else if out_of_bounds_bits != 0 {
+            *bits.last_mut().unwrap() = AtomicU64::new(u64::MAX >> out_of_bounds_bits);
+        }
+
         Self {
             ints: bits.into_boxed_slice(),
         }
     }
 
-    fn zero_first_set_bit(&self) -> Option<usize> {
+    fn first_free(&self) -> Option<usize> {
         for (i, int) in self.ints.iter().enumerate() {
             let mut bits = int.load(Relaxed);
             while bits != 0 {
@@ -193,27 +180,94 @@ impl AtomicBitSet {
         None
     }
 
-    fn set(&self, index: usize) {
+    fn free(&self, index: usize) {
         let int = index / U64_BITS;
         let bit = index % U64_BITS;
-        let bitmap = self.ints[int].fetch_or(1 << bit, Release);
-        debug_assert!(bitmap & 1 << bit == 0)
+        let bits = self.ints[int].fetch_or(1 << bit, Release);
+        debug_assert_eq!(bits & 1 << bit, 0)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::Pool;
+    use std::cell::RefCell;
+    use std::rc::Rc;
     use std::sync::atomic::Ordering::Relaxed;
 
     #[test]
-    fn empty() {
+    fn size_check() {
         let p: Pool<()> = std::iter::empty().collect();
         assert_eq!(p.len(), 0);
         assert_eq!(p.capacity(), 0);
-        assert_eq!(p.bitset.ints.len(), 1);
-        assert_eq!(p.bitset.ints[0].load(Relaxed), 0);
+        assert_eq!(p.freelist.ints.len(), 1);
+        assert_eq!(p.freelist.ints[0].load(Relaxed), 0);
         assert!(p.pull().is_none());
+
+        let p: Pool<usize> = (0..1usize).collect();
+        assert_eq!(p.len(), 1);
+        assert_eq!(p.capacity(), 1);
+        assert_eq!(p.freelist.ints.len(), 1);
+        assert_eq!(p.freelist.ints[0].load(Relaxed), 1);
+        assert!(p.pull().is_some());
+
+        let p: Pool<usize> = (0..65usize).collect();
+        assert_eq!(p.len(), 65);
+        assert_eq!(p.capacity(), 65);
+        assert_eq!(p.freelist.ints.len(), 2);
+        assert_eq!(p.freelist.ints[0].load(Relaxed), u64::MAX);
+        assert_eq!(p.freelist.ints[1].load(Relaxed), 1);
+        assert!(p.pull().is_some());
+
+        let p: Pool<usize> = (0..500usize).collect();
+        assert_eq!(p.len(), 500);
+        assert_eq!(p.capacity(), 500);
+        assert_eq!(p.freelist.ints.len(), 8);
+        assert!(p.freelist.ints[0..7]
+            .iter()
+            .map(|x| x.load(Relaxed))
+            .all(|x| x == u64::MAX));
+        assert_eq!(p.freelist.ints[7].load(Relaxed), u64::MAX >> 12);
+        assert!(p.pull().is_some());
+    }
+
+    #[test]
+    fn full_and_partial_drop() {
+        struct DropTest {
+            drops: Rc<RefCell<Vec<bool>>>,
+            index: usize,
+        }
+
+        impl Drop for DropTest {
+            fn drop(&mut self) {
+                self.drops.borrow_mut()[self.index] = true
+            }
+        }
+
+        const N: usize = 500;
+        let new_pool = || {
+            let drops = Rc::new(RefCell::new(vec![false; N]));
+            let p: Pool<DropTest> = (0..N)
+                .map(|index| DropTest {
+                    drops: drops.clone(),
+                    index,
+                })
+                .collect();
+            (drops, p)
+        };
+
+        let (drops, p) = new_pool();
+        drop(p);
+        assert!(drops.borrow().iter().all(|dropped| *dropped));
+
+        let (drops, p) = new_pool();
+        for _ in 0..N / 2 {
+            std::mem::forget(p.pull().unwrap());
+        }
+        drop(p);
+
+        assert!(drops.borrow()[..N / 2].iter().all(|dropped| !*dropped));
+        assert!(drops.borrow()[N / 2..].iter().all(|dropped| *dropped));
     }
 
     #[test]
@@ -221,9 +275,9 @@ mod tests {
         let p: Pool<usize> = (0..100usize).collect();
         assert_eq!(p.len(), 100);
         assert_eq!(p.capacity(), 100);
-        assert_eq!(p.bitset.ints.len(), 2);
-        assert_eq!(p.bitset.ints[0].load(Relaxed), u64::MAX);
-        assert_eq!(p.bitset.ints[1].load(Relaxed), u64::MAX >> 28);
+        assert_eq!(p.freelist.ints.len(), 2);
+        assert_eq!(p.freelist.ints[0].load(Relaxed), u64::MAX);
+        assert_eq!(p.freelist.ints[1].load(Relaxed), u64::MAX >> 28);
 
         let mut objects = Vec::new();
         for _ in 0..p.len() {
@@ -235,7 +289,7 @@ mod tests {
         }
 
         assert!(p
-            .bitset
+            .freelist
             .ints
             .iter()
             .map(|x| x.load(Relaxed))
@@ -243,8 +297,8 @@ mod tests {
 
         drop(objects);
 
-        assert_eq!(p.bitset.ints[0].load(Relaxed), u64::MAX);
-        assert_eq!(p.bitset.ints[1].load(Relaxed), u64::MAX >> 28);
+        assert_eq!(p.freelist.ints[0].load(Relaxed), u64::MAX);
+        assert_eq!(p.freelist.ints[1].load(Relaxed), u64::MAX >> 28);
         unsafe {
             assert!(p
                 .objects

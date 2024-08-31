@@ -75,6 +75,8 @@
 //!
 //! [`std::sync::Arc`]: https://doc.rust-lang.org/stable/std/sync/struct.Arc.html
 
+#![warn(clippy::all, clippy::pedantic)]
+
 use parking_lot::Mutex;
 use std::iter::FromIterator;
 use std::mem::{forget, ManuallyDrop};
@@ -97,11 +99,12 @@ impl<T> Pool<T> {
         F: Fn() -> T,
     {
         Pool {
-            objects: Mutex::new((0..cap).into_iter().map(|_| init()).collect()),
+            objects: Mutex::new((0..cap).map(|_| init()).collect()),
         }
     }
 
     #[inline]
+    #[must_use]
     pub fn from_vec(v: Vec<T>) -> Pool<T> {
         Pool {
             objects: Mutex::new(v),
@@ -132,7 +135,7 @@ impl<T> Pool<T> {
             .unwrap_or_else(|| Reusable::new(self, fallback()))
     }
 
-    /// Like try_pull, but returns an owned reusable wrapper.
+    /// Like `try_pull`, but returns an owned reusable wrapper.
     ///
     /// `try_pull_owned()` is about 10% slower than `try_pull()`, but it may be
     /// necessary in some cases where you cannot satisfy a `'lifetime` borrow
@@ -157,7 +160,7 @@ impl<T> Pool<T> {
 
     #[inline]
     pub fn attach(&self, t: T) {
-        self.objects.lock().push(t)
+        self.objects.lock().push(t);
     }
 }
 

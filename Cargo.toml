@@ -12,6 +12,9 @@ keywords = ["atomic", "garbage", "non-blocking", "lock-free"]
 categories = ["concurrency", "memory-management", "data-structures"]
 license = "MIT/Apache-2.0"
 
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
+
 [dependencies]
 parking_lot = "0.12.3"
 
