@@ -12,8 +12,6 @@ use std::sync::{atomic::AtomicU64, Arc};
 #[cfg(loom)]
 use loom::sync::{atomic::AtomicU64, Arc};
 
-const U64_BITS: usize = u64::BITS as usize;
-
 pub struct Pool<T> {
     objects: Box<[UnsafeCell<MaybeUninit<T>>]>,
     freelist: FreeList,
@@ -75,13 +73,9 @@ impl<T> Pool<T> {
 
 impl<T> Drop for Pool<T> {
     fn drop(&mut self) {
-        for (i, int) in self.freelist.ints.iter().enumerate() {
-            let mut bits = int.load(Acquire);
-            while bits != 0 {
-                let bit = bits.trailing_zeros() as usize;
-                unsafe { (*self.objects[i * U64_BITS + bit].get()).assume_init_drop() }
-                bits &= !(1 << bit);
-            }
+        unsafe {
+            self.freelist
+                .iter_taken(|index| (*self.objects[index].get()).assume_init_drop())
         }
     }
 }
@@ -143,6 +137,8 @@ impl<T> Drop for Object<T> {
     }
 }
 
+const U64_BITS: usize = u64::BITS as usize;
+
 struct FreeList {
     ints: Box<[AtomicU64]>,
 }
@@ -185,6 +181,17 @@ impl FreeList {
         let bit = index % U64_BITS;
         let bits = self.ints[int].fetch_or(1 << bit, Release);
         debug_assert_eq!(bits & 1 << bit, 0)
+    }
+
+    fn iter_taken<F: Fn(usize)>(&self, f: F) {
+        for (i, int) in self.ints.iter().enumerate() {
+            let mut bits = int.load(Acquire);
+            while bits != 0 {
+                let bit = bits.trailing_zeros() as usize;
+                f(i * U64_BITS + bit);
+                bits &= !(1 << bit);
+            }
+        }
     }
 }
 
