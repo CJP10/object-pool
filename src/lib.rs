@@ -94,9 +94,9 @@ pub struct Pool<T> {
 
 impl<T> Pool<T> {
     #[inline]
-    pub fn new<F>(cap: usize, init: F) -> Pool<T>
+    pub fn new<F>(cap: usize, mut init: F) -> Pool<T>
     where
-        F: Fn() -> T,
+        F: FnMut() -> T,
     {
         Pool {
             objects: Mutex::new((0..cap).map(|_| init()).collect()),
