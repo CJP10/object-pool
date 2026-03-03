@@ -16,6 +16,7 @@ fn basics(c: &mut Criterion) {
     });
 
     group.bench_function("experimental_owned", |b| {
+        #[allow(clippy::arc_with_non_send_sync)]
         let pool = Arc::new(ExperimentalPool::from_iter(&[()]));
         b.iter(|| pool.pull_owned())
     });

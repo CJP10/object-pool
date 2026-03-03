@@ -32,10 +32,11 @@ impl<A> FromIterator<A> for Pool<A> {
 }
 
 impl<T> Pool<T> {
+    #[allow(clippy::must_use_candidate)]
     pub fn pull(&self) -> Option<ObjectRef<T>> {
         unsafe {
             self.freelist.first_free().map(|index| ObjectRef {
-                pool: &self,
+                pool: self,
                 value: (*self.objects[index].get()).assume_init_mut(),
                 index,
             })
@@ -43,6 +44,7 @@ impl<T> Pool<T> {
     }
 
     #[cfg(not(loom))]
+    #[allow(clippy::must_use_candidate)]
     pub fn pull_owned(self: &Arc<Self>) -> Option<Object<T>> {
         unsafe {
             self.freelist.first_free().map(|index| Object {
@@ -58,14 +60,16 @@ impl<T> Pool<T> {
         }
     }
 
+    #[allow(clippy::must_use_candidate)]
     pub fn len(&self) -> usize {
         let mut len = 0;
-        for int in self.freelist.ints.iter() {
-            len += int.load(Relaxed).count_ones() as usize
+        for int in &self.freelist.ints {
+            len += int.load(Relaxed).count_ones() as usize;
         }
         len
     }
 
+    #[allow(clippy::must_use_candidate)]
     pub fn capacity(&self) -> usize {
         self.objects.len()
     }
@@ -75,7 +79,7 @@ impl<T> Drop for Pool<T> {
     fn drop(&mut self) {
         unsafe {
             self.freelist
-                .iter_taken(|index| (*self.objects[index].get()).assume_init_drop())
+                .iter_taken(|index| (*self.objects[index].get()).assume_init_drop());
         }
     }
 }
@@ -86,7 +90,7 @@ pub struct ObjectRef<'a, T> {
     index: usize,
 }
 
-impl<'a, T> Deref for ObjectRef<'a, T> {
+impl<T> Deref for ObjectRef<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -94,13 +98,13 @@ impl<'a, T> Deref for ObjectRef<'a, T> {
     }
 }
 
-impl<'a, T> DerefMut for ObjectRef<'a, T> {
+impl<T> DerefMut for ObjectRef<'_, T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.value
     }
 }
 
-impl<'a, T> Drop for ObjectRef<'a, T> {
+impl<T> Drop for ObjectRef<'_, T> {
     fn drop(&mut self) {
         self.pool.freelist.free(self.index);
     }
@@ -133,7 +137,7 @@ impl<T> Drop for Object<T> {
                 .get()
                 .write(MaybeUninit::new(ManuallyDrop::take(&mut self.value)));
         }
-        self.pool.freelist.free(self.index)
+        self.pool.freelist.free(self.index);
     }
 }
 
@@ -180,7 +184,7 @@ impl FreeList {
         let int = index / U64_BITS;
         let bit = index % U64_BITS;
         let bits = self.ints[int].fetch_or(1 << bit, Release);
-        debug_assert_eq!(bits & 1 << bit, 0)
+        debug_assert_eq!(bits & 1 << bit, 0);
     }
 
     fn iter_taken<F: Fn(usize)>(&self, f: F) {
@@ -247,7 +251,7 @@ mod tests {
 
         impl Drop for DropTest {
             fn drop(&mut self) {
-                self.drops.borrow_mut()[self.index] = true
+                self.drops.borrow_mut()[self.index] = true;
             }
         }
 
@@ -292,7 +296,7 @@ mod tests {
             if let Some(ref mut o) = o {
                 **o += 1;
             }
-            objects.push(o)
+            objects.push(o);
         }
 
         assert!(p
