@@ -27,10 +27,15 @@
 //! # use std::io::Read;
 //! # let mut some_file = std::io::empty();
 //! let pool: Pool<Vec<u8>> = Pool::new(32, || Vec::with_capacity(4096));
-//! let mut reusable_buff = pool.try_pull().unwrap(); // returns None when the pool is saturated
-//! reusable_buff.clear(); // clear the buff before using
-//! some_file.read_to_end(&mut reusable_buff).ok();
-//! // reusable_buff is automatically returned to the pool when it goes out of scope
+//!
+//! {
+//!     let mut reusable_buff = pool.try_pull().unwrap(); // returns None when the pool is saturated
+//!     reusable_buff.clear(); // clear the buff before using
+//!     some_file.read_to_end(&mut reusable_buff).ok();
+//!     // reusable_buff is automatically returned to the pool when it goes out of scope
+//! }
+//!
+//! assert_eq!(pool.into_iter().count(), 32);
 //! ```
 //! Pull from pool and `detach()`
 //! ```
@@ -38,11 +43,16 @@
 //! let pool: Pool<Vec<u8>> = Pool::new(32, || Vec::with_capacity(4096));
 //! let mut reusable_buff = pool.try_pull().unwrap(); // returns None when the pool is saturated
 //! reusable_buff.clear(); // clear the buff before using
-//! let (pool, reusable_buff) = reusable_buff.detach();
-//! let mut s = String::from_utf8(reusable_buff).unwrap();
-//! s.push_str("hello, world!");
-//! pool.attach(s.into_bytes()); // reattach the buffer before reusable goes out of scope
-//! // reusable_buff is automatically returned to the pool when it goes out of scope
+//!
+//! {
+//!     let (pool, reusable_buff) = reusable_buff.detach();
+//!     let mut s = String::from_utf8(reusable_buff).unwrap();
+//!     s.push_str("hello, world!");
+//!     pool.attach(s.into_bytes()); // reattach the buffer before reusable goes out of scope
+//!     // reusable_buff is automatically returned to the pool when it goes out of scope
+//! }
+//!
+//! assert_eq!(pool.into_iter().count(), 32);
 //! ```
 //!
 //! ## Using Across Threads
@@ -169,6 +179,15 @@ impl<T> FromIterator<T> for Pool<T> {
         Self {
             objects: Mutex::new(iter.into_iter().collect()),
         }
+    }
+}
+
+impl<T> IntoIterator for Pool<T> {
+    type Item = T;
+    type IntoIter = <Vec<T> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.objects.into_inner().into_iter()
     }
 }
 
